@@ -1,0 +1,6 @@
+all:
+  children:
+    homelab_nodes:
+      hosts:
+        192.168.1.1:
+        # Insert Hosts

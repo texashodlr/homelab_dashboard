@@ -4,14 +4,34 @@ Application which lets the user know the general health status of their homelab.
 
 ## Requirements
 
-### Prometheus Node Exporter
+### Ansible 
+
+0. [Ansible __for RHEL__](https://docs.ansible.com/ansible/latest/installation_guide/installation_distros.html#installing-distros)
+
+`subscription-manager repos --enable ansible-2.9-for-rhel-8-x86_64-rpms`
+
+`sudo yum install ansible`
+
+1. [Prometheus Node Exporter](https://prometheus-community.github.io/ansible/branch/main/node_exporter_role.html#ansible-collections-prometheus-prometheus-node-exporter-role)
+
+`ansible-galaxy collection install prometheus.prometheus`
+
+__or__
+
+`ansible-galaxy install -r requirements.yml`
+
+2. [Prometheus Nvidia GPU Export](https://prometheus-community.github.io/ansible/branch/main/nvidia_gpu_exporter_role html#ansible-collections-prometheus-prometheus-nvidia-gpu-exporter-role)
+
+### Non-Ansible
+
+#### Prometheus Node Exporter
 [Link](https://github.com/prometheus/node_exporter)
 
-### Nvidia Node-Exporter
+#### Nvidia Node-Exporter
 [Link](https://github.com/NVIDIA/dcgm-exporter)
 
 
-#### Ubuntu 24.04 Prep
+##### Ubuntu 24.04 Prep
 1. `apt update`
 2. `apt install cuda-toolkit`
 3. Reboot
@@ -19,9 +39,8 @@ Application which lets the user know the general health status of their homelab.
 5. `export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/usr/local/cuda-13.0/lib64`
 6. Navigate to [CUDA-Samples](https://github.com/nvidia/cuda-samples)
 7. `git clone https://github.com/nvidia/cuda-samples`
-8. 
 
-#### Bare-Metal Nvidia NE Build
+##### Bare-Metal Nvidia NE Build
 1. Install [Golang](https://go.dev/dl/)
 `wget https://go.dev/dl/go1.25.1.linux-amd64.tar.gz`
 
@@ -70,20 +89,35 @@ __Installation of Dependencies__
 `sudo apt-get install --yes --install-recommends datacenter-gpu-manager-4-cuda${CUDA_VERSION}`
 
 _Optional_
+
 `sudo apt install --yes datacenter-gpu-manager-4-multinode-cuda${CUDA_VERSION}`
+
 `sudo apt install --yes datacenter-gpu-manager-4-dev`
 
 __Post Installation__
+
 `sudo systemctl --now enable nvidia-dcgm`
+
 `dcgmi discovery -l`
+
 __At this point DCGM is installed and functional__
+
 3. Install [Nvidia's DCGM node_exporter](https://github.com/NVIDIA/dcgm-exporter)
+
 __Installation__
+
 `git clone https://github.com/NVIDIA/dcgm-exporter.git`
+
 `cd dcgm-exporter`
+
 `make binary`
+
 `sudo make install`
+
 `...`
+
 `dcgm-exporter & curl localhost:9400/metrics`
 
-#### Container DCGM-Exporter
+##### Container DCGM-Exporter
+
+`...`
