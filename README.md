@@ -6,11 +6,11 @@ Application which lets the user know the general health status of their homelab.
 
 0. Nvidia
 
-0.1. `Configure NVIDIA Drivers and CUDA on your nodes`
+0.1. _Configure NVIDIA Drivers and CUDA on your nodes_
 
 0.1.A. _Validate with_: `nvidia-smi -q | grep -E 'Driver Version|CUDA Version'`
 
-0.2. `Install DCGM on your nodes`
+0.2. _Install DCGM on your nodes_
 
 0.2.A. _Install GO inside of 0-go.tar_: `rpm -iv *.rpm`
 
