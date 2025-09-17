@@ -1,0 +1,35 @@
+[Unit]
+Description=Prometheus Time Series Database
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+
+# Increase the open files limit a bit for comfort
+LimitNOFILE=65536
+# Security hardening (adjust to taste)
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectControlGroups=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectSystem=full
+LockPersonality=true
+
+ExecStart={{ prom_install_dir }}/prometheus \
+  --config.file={{ prom_config }} \
+  --storage.tsdb.path={{ prom_data_dir }} \
+  --web.listen-address={{ prom_listen_address | default('0.0.0.0:9090') }} \
+  --storage.tsdb.retention.time={{ prom_retention_time | default('7d') }} \
+  --web.enable-lifecycle
+
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

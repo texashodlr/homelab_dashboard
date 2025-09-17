@@ -1,6 +1,8 @@
+# Assumes installation on a RHEL9.6 Image w/NVIDIA GPUs
 all:
   children:
     homelab_nodes:
       hosts:
         192.168.1.1:
-        # Insert Hosts
+        # Insert Real Hosts
+        

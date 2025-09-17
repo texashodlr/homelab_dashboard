@@ -1,0 +1,36 @@
+---
+- name: Open monitoring ports for prometheus
+  hosts: all
+  become: yes
+  vars:
+    prometheus_control_plane: 255.255.255.255/24 #Change this in prod
+  tasks:
+    - name: Ensure firewalld is running
+      ansible.builtin.service:
+        name: firewalld
+        state: started
+        enabled: true
+    
+    - name: Allow Prometheus 9100/TCP Node Exporter
+      ansible.posix.firewalld:
+        port: 9100/tcp
+        source: "{{ prometheus_control_plane }}"
+        permanent: true
+        state: enabled
+        immediate: true
+    
+    - name: Allow DCGM 9400/TCP Node Exporter
+      ansible.posix.firewalld:
+        port: 9400/tcp
+        source: "{{ prometheus_control_plane }}"
+        permanent: true
+        state: enabled
+        immediate: true
+    
+    - name: Allow Alertmanager 9093/TCP
+      ansible.posix.firewalld:
+        port: 9093/tcp
+        source: "{{ prometheus_control_plane }}"
+        permanent: true
+        state: enabled
+        immediate: true

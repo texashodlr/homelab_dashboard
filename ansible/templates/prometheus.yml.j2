@@ -1,0 +1,61 @@
+# Prometheus main configuration (rendered by Ansible)
+global:
+  scrape_interval: {{ prom_scrape_interval | default('15s') }}
+  scrape_timeout:  {{ prom_scrape_timeout  | default('5s') }}
+  evaluation_interval: {{ prom_eval_interval | default('15s') }}
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - {{ prom_alertmanager_target | default("'127.0.0.1:9093'") }}
+
+# If you add rule files, drop them under /etc/prometheus/rules/*.yml and enable below
+rule_files:
+  {% if prom_rules_glob is defined %}
+  - {{ prom_rules_glob }}
+  {% else %}
+  # - /etc/prometheus/rules/*.yml
+  {% endif %}
+
+scrape_configs:
+
+  # --- Node Exporter on all homelab nodes ---
+  - job_name: node_exporter
+    honor_labels: true
+    scrape_interval: {{ node_exporter_scrape_interval | default('15s') }}
+    static_configs:
+      - targets: [
+        {%- set sep = joiner(', ') -%}
+        {%- for h in groups.get('homelab_nodes', []) -%}
+          {{ sep() }}
+          {%- set addr = hostvars[h].node_exporter_web_listen_address
+                        | default(h ~ ':9100') -%}
+          '{{ addr }}'
+        {%- endfor -%}
+        ]
+        labels:
+          role: homelab
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+
+  # --- DCGM Exporter on GPU nodes (if any) ---
+  - job_name: dcgm_exporter
+    honor_labels: true
+    scrape_interval: {{ dcgm_scrape_interval | default('15s') }}
+    static_configs:
+      - targets: [
+        {%- set sep = joiner(', ') -%}
+        {%- for h in groups.get('homelab_nodes', []) -%}
+          {{ sep() }}
+          {%- set addr = hostvars[h].dcgm_exporter_listen
+                        | default(h ~ ':9400') -%}
+          '{{ addr }}'
+        {%- endfor -%}
+        ]
+        labels:
+          role: homelab
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance

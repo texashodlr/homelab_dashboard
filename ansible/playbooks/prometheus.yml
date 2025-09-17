@@ -1,0 +1,46 @@
+# Prome Server
+---
+- name: Install Prometheus Server
+  hosts: prometheus_control_plane
+  become: yes
+  vars:
+    prom_tar: "{{ playbook_dir }}/../files/prometheus/prometheus-3.5.0.linux-amd64.tar.gz"
+    prom_install_dir: /opt/prometheus
+    prom_data_dir: /var/lib/prometheus
+    prom_config: /etc/prometheus/prometheus.yml
+  tasks:
+    - name: Create dirs
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - "{{ prom_install_dir }}"
+        - "{{ prom_data_dir }}"
+        - "{{ prom_config | dirname }}"
+    
+    - name: Unpack tarball
+      ansible.builtin.unarchive:
+        src: "{{ prom_tar }}"
+        dest: "{{ prom_install_dir }}"
+        remote_src: true
+        creates: "{{ prom_install_dir }}/prometheus"
+    
+    - name: Place Prometheus yml
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/prometheus.yml.j2"
+        dest: "{{ prom_config }}"
+        mode: '0644'
+    
+    - name: Render systemd unit
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/prometheus.service.j2"
+        dest: /etc/systemd/system/prometheus.service
+        mode: '0644'
+    
+    - name: Reload systemd and start
+      ansible.builtin.systemd:
+        name: prometheus
+        enabled: true
+        state: started
+        daemon_reload: true

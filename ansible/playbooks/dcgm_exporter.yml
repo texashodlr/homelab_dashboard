@@ -1,0 +1,7 @@
+---
+- name: Install DCGM and Exporter
+  hosts: all
+  become: yes
+  vars:
+    dcgm_rpm_dir: "{{ playbook_dir }}/../files/dcgm"
+    dcgm_exporter_tar: "{{ playbook_dir }}/../files/dcgm/dcgm-exporter-1.9.0.linux-amd64.tar.gz"
