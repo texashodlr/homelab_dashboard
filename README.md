@@ -4,39 +4,39 @@ Application which lets the user know the general health status of their homelab.
 
 ## Air-Gapped Requirements
 
-0. Nvidia
-
-0.1. _Configure NVIDIA Drivers and CUDA on your nodes_
-
-0.1.A. _Validate with_: `nvidia-smi -q | grep -E 'Driver Version|CUDA Version'`
-
-0.2. _Install DCGM on your nodes_
-
-0.2.A. _Install GO inside of 0-go.tar_: `rpm -iv *.rpm`
-
-0.2.B. _Install the DCGM rpms inside of 1-nvidia-dcgm.tar_: `rpm -iv *.rpm`
-
-0.2.B.1. _Turn on DCGM_: `sudo systemctl --now enable nvidia-dcgm`
-
-0.2.B.2. _Query the local system_: `dcgmi discovery -l` or with `dcgmi diag -r [1/2/3/4]` or `dcgmi health -s a` or `dcgmi health -c`
-
-0.2.B.3. _Some useful links_: [Dell x DCGM](https://www.dell.com/support/kbdoc/en-hk/000219485/nvidia-dcgm-datacenter-gpu-manager-install) and [Nvidia DCGM Install Docs](https://docs.nvidia.com/datacenter/dcgm/latest/user-guide/getting-started.html#id2)
-
-0.2.C. [_Build DCGM Exporter from source_](https://github.com/NVIDIA/dcgm-exporter):
-
-`unzip 2_dcgm_exporter.zip`
-
-`cd dcgm-exporter`
-
-`make binary`
-
-`sudo make install`
-
-_...wait..._
-
-`dcgm-exporter & curl localhost:9400/metrics`
-
-0.3. _Install Prometheus on the control plane_: 
+1. Nvidia
+    1. _Configure NVIDIA Drivers and CUDA on your nodes_
+        1. _Validate with_: `nvidia-smi -q | grep -E 'Driver Version|CUDA Version'`
+    2. _Install DCGM on your nodes_
+        1. _Install GO inside of 0-go.tar_: `rpm -iv *.rpm`
+        2. _Install the DCGM rpms inside of 1-nvidia-dcgm.tar_: `rpm -iv *.rpm`
+            1. _Turn on DCGM_: `sudo systemctl --now enable nvidia-dcgm`
+            2. _Query the local system_: `dcgmi discovery -l` or with `dcgmi diag -r [1/2/3/4]` or `dcgmi health -s a` or `dcgmi health -c`
+            3. _Some useful links_: [Dell x DCGM](https://www.dell.com/support/kbdoc/en-hk/000219485/nvidia-dcgm-datacenter-gpu-manager-install) and [Nvidia DCGM Install Docs](https://docs.nvidia.com/datacenter/dcgm/latest/user-guide/getting-started.html#id2)
+        3. [_Build DCGM Exporter from source_](https://github.com/NVIDIA/dcgm-exporter):
+        ```
+        unzip 2_dcgm_exporter.zip
+        cd dcgm-exporter
+        make binary
+        sudo make install
+        _...wait..._
+        dcgm-exporter & curl localhost:9400/metrics
+        ```
+    3. _Install Prometheus on the control plane and nodes_: 
+        1. _Prometheus tarball_: `prometheus-3.5.0.linux-amd64.tar.gz`
+        2. _Prometheus playbook_: `./ansible/playbooks/prometheus.yml`
+        3. _General run-order_:
+            1. _Install the offline collection to the control-plane_: `ansible-galaxy collection install ./collections/ansible_collections/prometheus/prometheus-prometheus-0.27.3.tar.gz`
+            2. _Deploy the prometheus node exporters to the downstream nodes_: `ansible-playbook -i inventory.yml playbooks/node_exporter.yml`
+            3. _Deploy the DCGM node exporters to the downstream nodes_: `ansible-playbook -i inventory.yml playbooks/dcgm_exporter.yml`
+            4. _Deploy the Prometheus server to the control plane_: `ansible-playbook -i inventory.yml playbooks/prometheus.yml`
+            5. _Open firewalld ports_: `ansible-playbook -i inventory.yml playbooks/firewalld.yml`
+        4. _Verification of control-plane install_:
+            ```
+            systemctl status prometheus
+            ss -lntp | grep 9090
+            curl -s http://<control-plane-ip>:9090/-/ready
+            ```
 
 ## Requirements
 
