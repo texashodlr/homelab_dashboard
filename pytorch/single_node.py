@@ -2,16 +2,29 @@
 # https://github.com/pytorch/examples/blob/main/distributed/ddp-tutorial-series/single_gpu.py
 # pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu126
 
+
+import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
-from datautils import MyTrainDataset
+#from datautils import MyTrainDataset
+
+class MyTrainDataset(Dataset):
+    def __init__(self, num_samples: int, feature_dim: int = 20, num_class: int = 10):
+        self.X = torch.randn(num_samples, feature_dim)
+        self.y = torch.randint(0, num_class, (num_samples,))
+    
+    def __len__(self):
+        return self.X.size(0)
+    
+    def __getitem__(self, idx):
+        return self.X[idx], self.y[idx]
 
 class Trainer:
     def __init__(
         self,
         model: torch.nn.Module,
-        train_data: Dataloader,
+        train_data: DataLoader,
         optimizer: torch.optim.Optimizer,
         gpu_id: int,
         save_every: int,
@@ -23,10 +36,12 @@ class Trainer:
         self.save_every = save_every
 
     def _run_batch(self, source, targets):
-        self. optimizer.zero_grad()
+        self.optimizer.zero_grad()
         output = self.model(source)
         loss = F.cross_entropy(output, targets)
+        loss_original = loss
         loss.backward()
+        #print(f"[GPU{self.gpu_id}] | Loss: {loss}")
         self.optimizer.step()
     
     def _run_epoch(self, epoch):
@@ -34,8 +49,8 @@ class Trainer:
         print(f"[GPU{self.gpu_id}] Epoch {epoch} | Batchsize: {b_sz} | Steps: {len(self.train_data)}")
         for source, targets in self.train_data:
             source = source.to(self.gpu_id)
-            tragets = targets.to(self.gpu_id)
-            self._run_batch(source,targets)
+            targets = targets.to(self.gpu_id)
+            self._run_batch(source, targets)
     
     def _save_checkpoints(self, epoch):
         ckp = self.model.state_dict()
@@ -49,14 +64,16 @@ class Trainer:
             if epoch % self.save_every == 0:
                 self._save_checkpoints(epoch)
     
-    def load_train_objs():
-        train_set = MyTrainDataset(2048)
-        model = torch.nn.Linear(20, 1)
-        optimizer = torch.optim.SGD(model.parameters(), lr=1e-3)
-        return train_set, model, optimizer
+def load_train_objs():
+    #rng = np.random.default_rng(63)
+    #train_set = rng.standard_normal((2048, 1))
+    train_set = MyTrainDataset(2048, feature_dim=20, num_class=10)
+    model = torch.nn.Linear(20, 10)
+    optimizer = torch.optim.SGD(model.parameters(), lr=1e-3)
+    return train_set, model, optimizer
     
 def prepare_dataloader(dataset: Dataset, batch_size: int):
-    return Dataloader(
+    return DataLoader(
         dataset,
         batch_size=batch_size,
         pin_memory=True,
@@ -65,7 +82,7 @@ def prepare_dataloader(dataset: Dataset, batch_size: int):
     
 def main(device, total_epochs, save_every, batch_size):
     dataset, model, optimizer = load_train_objs()
-    train_data = prepare_dataloader(dataset, batch_size)
+    train_data = prepare_dataloader(dataset, batch_size=32)
     trainer = Trainer(model, train_data, optimizer, device, save_every)
     trainer.train(total_epochs)
 
