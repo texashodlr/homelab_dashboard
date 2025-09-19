@@ -7,6 +7,8 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
+import matplotlib.pyplot as plt
+from typing import List, Optional
 #from datautils import MyTrainDataset
 
 class MyTrainDataset(Dataset):
@@ -28,21 +30,23 @@ class Trainer:
         optimizer: torch.optim.Optimizer,
         gpu_id: int,
         save_every: int,
+        loss_log: Optional[List[float]] = None,
     ) -> None:
         self.gpu_id = gpu_id
         self.model = model.to(gpu_id)
         self.train_data = train_data
         self.optimizer = optimizer
         self.save_every = save_every
+        self.loss_log = loss_log if loss_log is not None else []
 
     def _run_batch(self, source, targets):
         self.optimizer.zero_grad()
         output = self.model(source)
         loss = F.cross_entropy(output, targets)
-        loss_original = loss
         loss.backward()
-        #print(f"[GPU{self.gpu_id}] | Loss: {loss}")
         self.optimizer.step()
+        self.loss_log.append(float(loss.item()))
+        #print(f"[GPU{self.gpu_id}] | Loss: {loss} | Source: {type(source)} | Targets: {type(targets)}")
     
     def _run_epoch(self, epoch):
         b_sz = len(next(iter(self.train_data))[0])
@@ -63,6 +67,19 @@ class Trainer:
             self._run_epoch(epoch)
             if epoch % self.save_every == 0:
                 self._save_checkpoints(epoch)
+    
+    def loss_plot(self, total_epochs):
+        # Plotting the loss per epoch
+        print(f"Total Epochs: {total_epochs} | Dimensions of Loss_log: {len(self.loss_log)}")
+        plt.figure()
+        plt.plot(np.arange(1, len(self.loss_log) + 1), self.loss_log)
+        plt.xlabel(f"Epoch /e/ [0..{total_epochs}]")
+        plt.ylabel("Loss ")
+        plt.title(f"Loss per Epoch")
+        plt.grid(True)
+        plt.tight_layout()
+        plt.savefig("loss_curve.png", dpi=150)
+        plt.show()
     
 def load_train_objs():
     #rng = np.random.default_rng(63)
@@ -85,6 +102,7 @@ def main(device, total_epochs, save_every, batch_size):
     train_data = prepare_dataloader(dataset, batch_size=32)
     trainer = Trainer(model, train_data, optimizer, device, save_every)
     trainer.train(total_epochs)
+    trainer.loss_plot(total_epochs)
 
 if __name__ == "__main__":
     import argparse
