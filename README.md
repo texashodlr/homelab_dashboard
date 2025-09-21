@@ -38,25 +38,49 @@ Application which lets the user know the general health status of their homelab.
             curl -s http://<control-plane-ip>:9090/-/ready
             ```
 
-## Requirements
+## Internet-Connected Requirements
+
+### General Directions
+
+1. _Install the prometheus collection on the control plane node_
+
+	`wget https://github.com/prometheus/prometheus/releases/download/v3.5.0/prometheus-3.5.0.linux-amd64.tar.gz`
+
+	_Building from source_
+
+2. _Deploy node exporter to the nodes_
+
+	`ansible-playbook -i inventory.yml playbooks/node_exporter.yml`
+
+3. _Deploy DCGM exporter to GPU nodes_
+
+	`ansible-playbook -i inventory.yml playbooks/dcgm_exporter.yml`
+
+4. _Deploy prometheus server to control plane_
+
+	`ansible-playbook -i inventory.yml playbooks/prometheus.yml`
+
+5. _Networking config_
+
+	`ansible-playbook -i inventory.yml playbooks/firewalld.yml`
 
 ### Ansible 
 
-0. [Ansible __for RHEL__](https://docs.ansible.com/ansible/latest/installation_guide/installation_distros.html#installing-distros)
+1. [Ansible __for RHEL__](https://docs.ansible.com/ansible/latest/installation_guide/installation_distros.html#installing-distros)
 
-`subscription-manager repos --enable ansible-2.9-for-rhel-8-x86_64-rpms`
+	`subscription-manager repos --enable ansible-2.9-for-rhel-8-x86_64-rpms`
 
-`sudo yum install ansible`
+	`sudo yum install ansible`
 
-1. [Prometheus Node Exporter](https://prometheus-community.github.io/ansible/branch/main/node_exporter_role.html#ansible-collections-prometheus-prometheus-node-exporter-role)
+2. [Prometheus Node Exporter](https://prometheus-community.github.io/ansible/branch/main/node_exporter_role.html#ansible-collections-prometheus-prometheus-node-exporter-role)
 
-`ansible-galaxy collection install prometheus.prometheus`
+	`ansible-galaxy collection install prometheus.prometheus`
 
-__or__
+	__or__
 
-`ansible-galaxy install -r requirements.yml`
+	`ansible-galaxy install -r requirements.yml`
 
-2. [Prometheus Nvidia GPU Export](https://prometheus-community.github.io/ansible/branch/main/nvidia_gpu_exporter_role html#ansible-collections-prometheus-prometheus-nvidia-gpu-exporter-role)
+3. [Prometheus Nvidia GPU Export](https://prometheus-community.github.io/ansible/branch/main/nvidia_gpu_exporter_role html#ansible-collections-prometheus-prometheus-nvidia-gpu-exporter-role)
 
 ### Non-Ansible
 
