@@ -40,7 +40,56 @@ Application which lets the user know the general health status of their homelab.
 
 ## Internet-Connected Requirements
 
-### General Directions
+### Manual-General Directions
+
+#### Control Plane (Grafana and Prometheus Server)
+
+1. `wget https://github.com/prometheus/prometheus/releases/download/v3.5.0/prometheus-3.5.0.linux-amd64.tar.gz` _and_ `tar xvf prometheus-3.5.0.linux-amd64.tar.gz`
+
+2. `sudo useradd --no-create-home --shell /bin/false prometheus`
+
+3. `sudo mkdir /etc/prometheus`
+
+4. `sudo mkdir /var/lib/prometheus`
+
+5. `sudo chown prometheus:prometheus /etc/prometheus`
+
+6. `sudo chown prometheus:prometheus /var/lib/prometheus`
+
+7. `sudo cp prometheus promtool /usr/local/bin/`
+
+8. `sudo chown prometheus:prometheus /usr/local/bin/prometheus`
+
+9. `sudo chown prometheus:prometheus /usr/local/bin/promtool`
+
+10. `sudo cp prometheus.yml /etc/prometheus/prometheus.yml`
+
+11. `sudo chown -R prometheus:prometheus /etc/prometheus`
+
+12. `sudo vim /etc/systemd/system/prometheus.service`
+
+13. `sudo systemctl daemon-reexec`
+
+14. `sudo systemctl enable prometheus`
+
+15. `sudo systemctl start prometheus.service`
+
+16. `sudo apt-get install -y software-properties-common`
+
+17. `wget -q -O - https://apt.grafana.com/gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/grafana.gpg`
+
+18. `echo "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main" | sudo tee /etc/apt/sources.list.d/grafana.list`
+
+19. `sudo apt-get update && sudo apt-get install -y grafana`
+
+20. `sudo systemctl daemon-reexec`
+
+21. `sudo systemctl enable --now grafana-server`
+
+22. `sudo systemctl status grafana-server.service`
+
+
+### Ansible-General Directions
 
 1. _Install the prometheus collection on the control plane node_
 
