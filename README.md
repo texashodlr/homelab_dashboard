@@ -75,7 +75,7 @@ Application which lets the user know the general health status of their homelab.
 15. `sudo systemctl start prometheus.service`
 
 16. `sudo apt-get install -y software-properties-common`
-
+`
 17. `wget -q -O - https://apt.grafana.com/gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/grafana.gpg`
 
 18. `echo "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main" | sudo tee /etc/apt/sources.list.d/grafana.list`
@@ -87,6 +87,54 @@ Application which lets the user know the general health status of their homelab.
 21. `sudo systemctl enable --now grafana-server`
 
 22. `sudo systemctl status grafana-server.service`
+
+#### On the Nodes
+
+1. `sudo add-apt-repository ppa:longsleep/golang-backports`
+
+2. `sudo apt update`
+
+3. `sudo apt install golang-go`
+
+4. `wget https://github.com/prometheus/node_exporter/releases/download/v1.9.1/node_exporter-1.9.1.linux-amd64.tar.gz`
+
+5. `tar xvfz node_exporter-1.9.1.linux-amd64.tar.gz`
+
+6. `cd node_exporter-1.9.1.linux-amd64/`
+
+7. `sudo cp node_exporter-1.9.1.linux-amd64/node_exporter /usr/local/bin/`
+
+8. `sudo chown node_exporter:node_exporter /usr/local/bin/node_exporter`
+
+9. `sudo vim /etc/systemd/system/node_exporter.service`
+
+10. `sudo systemctl daemon-reexec`
+
+11. `sudo systemctl enable --now node_exporter`
+
+12. `sudo systemctl status node_exporter.service`
+
+13. `mkdir dcgm && cd dcgm`
+
+14. `wget https://github.com/NVIDIA/dcgm-exporter/archive/refs/tags/4.4.1-4.5.2.tar.gz`
+
+15. `tar xvf 4.4.1-4.5.2.tar.gz`
+
+16. `cd dcgm-exporter-4.4.1-4.5.2/`
+
+17. `make binary`
+
+18. `sudo make install`
+
+19. `dcgm-exporter --version`
+
+20. `sudo vim /etc/systemd/system/dcgm-exporter.service`
+
+21. `sudo systemctl daemon-reexec`
+
+22. `sudo systemctl enable --now dcgm-exporter.service`
+
+23. `sudo systemctl status dcgm-exporter.service`
 
 
 ### Ansible-General Directions
