@@ -98,12 +98,21 @@ def prepare_dataloader(dataset: Dataset, batch_size: int):
         shuffle=True
     )
     
-def main(device, total_epochs, save_every, batch_size):
+def main(device, device_loop, total_epochs, save_every, batch_size):
     dataset, model, optimizer = load_train_objs()
     train_data = prepare_dataloader(dataset, batch_size=32)
-    trainer = Trainer(model, train_data, optimizer, device, save_every)
-    trainer.train(total_epochs)
-    trainer.loss_plot(total_epochs)
+    if device_loop == True:
+        print(torch.cuda.device_count())
+        for i in range(torch.cuda.device_count()):
+            print(f"Initiating training on GPU #{i}: {torch.cuda.get_device_properties(i).name}...")
+            device = int(i)
+            trainer = Trainer(model, train_data, optimizer, device, save_every)
+            trainer.train(total_epochs)
+            trainer.loss_plot(total_epochs)
+    else:
+        trainer = Trainer(model, train_data, optimizer, device, save_every)
+        trainer.train(total_epochs)
+        trainer.loss_plot(total_epochs)
 
 if __name__ == "__main__":
     import argparse
@@ -112,5 +121,6 @@ if __name__ == "__main__":
     parser.add_argument('save_every', type=int, help='How often to save a snapshot')
     parser.add_argument('--batch_size', default=32, type=int, help='Input batch size on each device (default: 32)')
     parser.add_argument('--device_id', default=0, type=int, help='Pick your GPU (default is 0 for single rigs)')
+    parser.add_argument('--device_loop', default=False, type=bool, help='Loop through the available GPU devices')
     args = parser.parse_args()
-    main(args.device_id, args.total_epochs, args.save_every, args.batch_size)
+    main(args.device_id, args.device_loop, args.total_epochs, args.save_every, args.batch_size)
