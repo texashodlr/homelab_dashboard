@@ -1,7 +1,7 @@
 # This code leverages Pytorch's DDP Series and related file `single_gpu.py`
 # https://github.com/pytorch/examples/blob/main/distributed/ddp-tutorial-series/single_gpu.py
 # pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu126
-
+# default run configuration 
 
 import numpy as np
 import torch
@@ -33,6 +33,7 @@ class Trainer:
         loss_log: Optional[List[float]] = None,
     ) -> None:
         self.gpu_id = gpu_id
+        print(f"GPU ID: {self.gpu_id}")
         self.model = model.to(gpu_id)
         self.train_data = train_data
         self.optimizer = optimizer
@@ -110,7 +111,6 @@ if __name__ == "__main__":
     parser.add_argument('total_epochs', type=int, help='Total epochs to train the model')
     parser.add_argument('save_every', type=int, help='How often to save a snapshot')
     parser.add_argument('--batch_size', default=32, type=int, help='Input batch size on each device (default: 32)')
+    parser.add_argument('--device_id', default=0, type=int, help='Pick your GPU (default is 0 for single rigs)')
     args = parser.parse_args()
-
-    device = 0
-    main(device, args.total_epochs, args.save_every, args.batch_size)
+    main(args.device_id, args.total_epochs, args.save_every, args.batch_size)
