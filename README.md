@@ -66,27 +66,39 @@ Application which lets the user know the general health status of their homelab.
 
 11. `sudo chown -R prometheus:prometheus /etc/prometheus`
 
-12. `sudo vim /etc/systemd/system/prometheus.service`
+12. `sudo vim /etc/prometheus/prometheus.yml` minimal config file located inside `./prometheus/prometheus.yml`
 
-13. `sudo systemctl daemon-reexec`
+13. `sudo vim /etc/systemd/system/prometheus.service` minimal systemd service file located inside `./prometheus/prometheus.service`
 
-14. `sudo systemctl enable prometheus`
+14. `sudo systemctl daemon-reexec`
 
-15. `sudo systemctl start prometheus.service`
+15. `sudo systemctl enable prometheus`
 
-16. `sudo apt-get install -y software-properties-common`
-`
-17. `wget -q -O - https://apt.grafana.com/gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/grafana.gpg`
+16. `sudo systemctl start prometheus.service`
 
-18. `echo "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main" | sudo tee /etc/apt/sources.list.d/grafana.list`
+17. Verify prometheus UI in the browser: `http://<deployed_ip>:9090`
 
-19. `sudo apt-get update && sudo apt-get install -y grafana`
+18. Adding in scraping for node_exporter (:9100) and dcgm_exporter (:9400) see config file `./prometheus/node_exporter_prometheus.yml`
 
-20. `sudo systemctl daemon-reexec`
+19. Validate the new config file `sudo promtool check config /etc/prometheus/prometheus.yml`
 
-21. `sudo systemctl enable --now grafana-server`
+20. `sudo systemctl restart prometheus`
 
-22. `sudo systemctl status grafana-server.service`
+21. `sudo systemctl status prometheus`
+
+22. `sudo apt-get install -y software-properties-common`
+
+23. `wget -q -O - https://apt.grafana.com/gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/grafana.gpg`
+
+24. `echo "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main" | sudo tee /etc/apt/sources.list.d/grafana.list`
+
+25. `sudo apt-get update && sudo apt-get install -y grafana`
+
+26. `sudo systemctl daemon-reexec`
+
+27. `sudo systemctl enable --now grafana-server`
+
+28. `sudo systemctl status grafana-server.service`
 
 #### On the Nodes
 
@@ -106,7 +118,7 @@ Application which lets the user know the general health status of their homelab.
 
 8. `sudo chown node_exporter:node_exporter /usr/local/bin/node_exporter`
 
-9. `sudo vim /etc/systemd/system/node_exporter.service`
+9. `sudo vim /etc/systemd/system/node_exporter.service` minimal config file located inside `./prometheus/node_exporter.service`
 
 10. `sudo systemctl daemon-reexec`
 
@@ -114,27 +126,31 @@ Application which lets the user know the general health status of their homelab.
 
 12. `sudo systemctl status node_exporter.service`
 
-13. `mkdir dcgm && cd dcgm`
+13. Verify with `curl http://localhost:9100/metrics | head`
 
-14. `wget https://github.com/NVIDIA/dcgm-exporter/archive/refs/tags/4.4.1-4.5.2.tar.gz`
+14. `mkdir dcgm && cd dcgm`
 
-15. `tar xvf 4.4.1-4.5.2.tar.gz`
+15. `wget https://github.com/NVIDIA/dcgm-exporter/archive/refs/tags/4.4.1-4.5.2.tar.gz`
 
-16. `cd dcgm-exporter-4.4.1-4.5.2/`
+16. `tar xvf 4.4.1-4.5.2.tar.gz`
 
-17. `make binary`
+17. `cd dcgm-exporter-4.4.1-4.5.2/`
 
-18. `sudo make install`
+18. `make binary`
 
-19. `dcgm-exporter --version`
+19. `sudo make install`
 
-20. `sudo vim /etc/systemd/system/dcgm-exporter.service`
+20. `dcgm-exporter --version`
 
-21. `sudo systemctl daemon-reexec`
+21. `sudo vim /etc/systemd/system/dcgm-exporter.service` minimal config file located inside `./prometheus/dcgm_exporter.service`
 
-22. `sudo systemctl enable --now dcgm-exporter.service`
+22. `sudo systemctl daemon-reexec`
 
-23. `sudo systemctl status dcgm-exporter.service`
+23. `sudo systemctl enable --now dcgm-exporter.service`
+
+24. `sudo systemctl status dcgm-exporter.service`
+
+25. `curl http://localhost:9400/metrics | head`
 
 
 ### Ansible-General Directions

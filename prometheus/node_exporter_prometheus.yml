@@ -1,0 +1,33 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # --- Prometheus Server --- #
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+  
+  # --- Subordinate Linux Nodes (node_exporter) --- #
+  - job_name: "node_exporter"
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - IP.IP.IP.A:9100
+          - IP.IP.IP.B:9100
+          # - etc...
+        labels:
+          role: "server"
+          exporter: "node"
+  
+  # --- Subordinate GPU Nodes (NVIDIA DCGM exporter) --- #
+  - job_name: "dcgm_exporter"
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - IP.IP.IP.A:9400
+          - IP.IP.IP.B:9400
+          # - etc...
+        labels:
+          role: "gpu-node"
+          exporter: "dcgm"
