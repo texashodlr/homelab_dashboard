@@ -55,15 +55,7 @@ class Trainer:
         for source, targets in self.train_data:
             source = source.to(self.gpu_id)
             targets = targets.to(self.gpu_id)
-            ### GPU Querying ###
-            dev = torch.device(f"cuda:{self.gpu_id}")
-            torch.cuda.reset_peak_memory_stats(dev)
             self._run_batch(source, targets)
-            print(f"#### ~~~ Batch Completed ~~~ ####")
-            print(f"Allocated (MB): {(torch.cuda.memory_allocated(dev)/(1024**2))}")
-            print(f"Reserved (MB): {(torch.cuda.memory_reserved(dev)/(1024**2))}")
-            print(f"Max Allocated (MB): {(torch.cuda.max_memory_allocated(dev)/(1024**2))}")
-            print(f"Max Reserved (MB): {(torch.cuda.max_memory_reserved(dev)/(1024**2))}")
     
     def _save_checkpoints(self, epoch):
         ckp = self.model.state_dict()
@@ -73,7 +65,23 @@ class Trainer:
     
     def train(self, max_epochs: int):
         for epoch in range(max_epochs):
+            ### START GPU Querying ###
+            dev = torch.device(f"cuda:{self.gpu_id}")
+            torch.cuda.reset_peak_memory_stats(dev)
+            start = torch.cuda.Event(enable_timing=True)
+            end = torch.cuda.Event(enable_timing=True)
+            torch.cuda.synchronize()
+            start.record()
             self._run_epoch(epoch)
+            end.record()
+            torch.cuda.synchronize()
+            print(f"\n#### ~~~ Batch Completed ~~~ ####")
+            print(f"\tCUDA Kernel Time Elapsed (ms): {start.elapsed_time(end)}")
+            print(f"Allocated (MB): {(torch.cuda.memory_allocated(dev)/(1024**2))}")
+            print(f"Reserved (MB): {(torch.cuda.memory_reserved(dev)/(1024**2))}")
+            print(f"Max Allocated (MB): {(torch.cuda.max_memory_allocated(dev)/(1024**2))}")
+            print(f"Max Reserved (MB): {(torch.cuda.max_memory_reserved(dev)/(1024**2))}\n")
+            ### END GPU Querying ###
             if epoch % self.save_every == 0:
                 self._save_checkpoints(epoch)
     
