@@ -1,0 +1,15 @@
+#
+# Netrwork stats to query
+# - rate(node_network_receive_bytes_total[5m]) / rate(node_network_transmit_bytes_total[5m])
+# - rate(node_network_receive_errs_total[5m]) / rate(node_network_transmit_errs_total[5m])
+#
+
+### ~~~ Network Metrics ~~~ ###
+groups:
+  - name: node_network
+    interval: 30s
+    rules:
+      - record: instance:node_bandwidth_usage:rate5m
+        expr: rate(node_network_receive_bytes_total[5m]) / rate(node_network_transmit_bytes_total[5m])
+      - record: instance:node_packet_status:rate5m
+        expr: rate(node_network_receive_errs_total[5m]) / rate(node_network_transmit_errs_total[5m])

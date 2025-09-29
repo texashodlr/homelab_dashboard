@@ -1,0 +1,30 @@
+#/*
+# Memory stats to query
+# - node_memory_MemTotal_bytes
+# - node_memory_MemAvailable_bytes
+# - node_memory_Active_bytes
+# - node_memory_Inactive_bytes
+# - node_memory_SwapTotal_bytes
+# - node_memory_SwapFree_bytes
+# - node_pressure_memory_waiting_seconds_total
+#
+
+### ~~~ Memory Metrics ~~~ ###
+groups:
+  - name: node_memory
+    interval: 30s
+    rules:
+      - record: instance:node_memory_MemTotal_bytes:rate5m
+        expr: rate(node_memory_MemTotal_bytes[5m])
+      - record: instance:node_memory_MemAvailable_bytes:rate5m
+        expr: rate(node_memory_MemAvailable_bytes[5m])
+      - record: instance:node_memory_Active_bytes:rate5m
+        expr: rate(node_memory_Active_bytes[5m])
+      - record: instance:node_memory_Inactive_bytes:rate5m
+        expr: rate(node_memory_Inactive_bytes[5m])
+      - record: instance:node_memory_SwapTotal_bytes:rate5m
+        expr: rate(node_memory_SwapTotal_bytes[5m])
+      - record: instance:node_memory_SwapFree_bytes:rate5m
+        expr: rate(node_memory_SwapFree_bytes[5m])
+      - record: instance:node_pressure_memory_waiting_seconds_total:rate5m
+        expr: rate(node_pressure_memory_waiting_seconds_total[5m])

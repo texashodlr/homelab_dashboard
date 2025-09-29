@@ -1,0 +1,24 @@
+#
+# Disk stats to query
+# - rate(node_disk_read_bytes_total[5m]) / rate(node_disk_written_bytes_total[5m])
+# - node_disk_io_time_seconds_total
+# - node_filesystem_avail_bytes
+# - node_filesystem_size_bytes
+# - node_pressure_io_stalled_seconds_total
+#
+
+### ~~~ Disk Metrics ~~~ ###
+groups:
+  - name: node_disk
+    interval: 30s
+    rules:
+      - record: instance:node_disk_throughput:rate5m
+        expr: rate(node_disk_read_bytes_total[5m]) / rate(node_disk_written_bytes_total[5m])
+      - record: instance:node_disk_io_time_seconds_total:rate5m
+        expr: rate(node_disk_io_time_seconds_total[5m])
+      - record: instance:node_filesystem_size_bytes:rate5m
+        expr: rate(node_filesystem_size_bytes[5m])
+      - record: instance:node_filesystem_avail_bytes:rate5m
+        expr: rate(node_filesystem_avail_bytes[5m])
+      - record: instance:node_pressure_io_stalled_seconds_total:rate5m
+        expr: rate(node_pressure_io_stalled_seconds_total[5m])
