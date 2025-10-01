@@ -3,6 +3,7 @@ This instance assumes >1 GPU on a single node
 """
 import numpy as np
 import torch
+import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 import torch.multiprocessing as mp
 from torch.utils.data.distributed import DistributedSampler
@@ -18,6 +19,7 @@ def ddp_setup(rank, world_size):
     """
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = "12355"
+    torch.cuda.set_device(rank)
     init_process_group(backend="nccl", rank=rank, world_size=world_size)
 
 class MyTrainDataset(Dataset):
@@ -37,15 +39,16 @@ class Trainer:
         model: torch.nn.Module,
         train_data: DataLoader,
         optimizer: torch.optim.Optimizer,
+        gpu_id: int,
         save_every: int,
         snapshot_path: str,
     ) -> None:
-        self.gpu_id = int(os.environ["LOCAL_RANK"])
+        self.gpu_id = gpu_id
         self.model = model.to(self.gpu_id)
         self.train_data = train_data
         self.optimizer = optimizer
         self.save_every = save_every
-        self.epochs_run = 0
+        #self.epochs_run = 0
         self.snapshot_path = snapshot_path
         if os.path.exists(snapshot_path):
             print("Loading snapshot")
