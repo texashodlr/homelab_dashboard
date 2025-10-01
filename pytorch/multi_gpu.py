@@ -84,7 +84,7 @@ class Trainer:
             "MODEL_STATE": self.model.module.state_dict(),
             "EPOCHS_RUN": epoch,
         }
-        torch.save(snapshot, self.snapshot_path)
+        torch.save(snapshot, "snapshot.pt")
         print(f"Epoch {epoch} | Training snapshot saved at {self.snapshot_path}")
 
     def train(self, max_epochs: int):
