@@ -1,5 +1,8 @@
 """
 This instance assumes >1 GPU on a single node
+This also sets the base Pytorch/Cuda install to 2.5.0/11.8
+    pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu118
+To deal with my 1070s, 3070 and 4070
 """
 import numpy as np
 import torch
@@ -71,7 +74,7 @@ class Trainer:
             "EPOCHS_RUN": epoch,
         }
         torch.save(snapshot, "snapshot.pt")
-        print(f"Epoch {epoch} | Training snapshot saved at {self.snapshot_path}")
+        print(f"Epoch {epoch} | Training snapshot saved at in the local path.")
 
     def train(self, max_epochs: int):
         for epoch in range(max_epochs):
