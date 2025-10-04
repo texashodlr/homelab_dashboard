@@ -49,8 +49,8 @@ class Trainer:
         self.local_rank = int(os.environ["LOCAL_RANK"])
         self.global_rank = int(os.environ["RANK"])  
         # set device
-        self.acc = torch.accelerator.current_accelerator()
-        self.device: torch.device = torch.device(f"{self.acc}:{self.local_rank}")
+        self.acc = torch.cuda.current_device()
+        self.device: torch.cuda.device = torch.cuda.device(f"{self.acc}:{self.local_rank}")
         self.device_type = self.device.type
         # data stuff
         self.train_dataset = train_dataset

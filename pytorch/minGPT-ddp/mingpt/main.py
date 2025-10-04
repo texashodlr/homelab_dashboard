@@ -10,17 +10,29 @@ from omegaconf import DictConfig
 import hydra
 
 def verify_min_gpu_count(min_gpus: int = 2) -> bool:
-    has_gpu = torch.accelerator.is_available()
-    gpu_count = torch.accelerator.device_count()
+    has_gpu = torch.cuda.is_available()
+    gpu_count = torch.cuda.device_count()
     return has_gpu and gpu_count >= min_gpus
 
 def ddp_setup():
-    acc = torch.accelerator.current_accelerator()
-    rank = int(os.environ["LOCAL_RANK"])
-    device: torch.device = torch.device(f"{acc}:{rank}")
-    backend = torch.distributed.get_default_backend_for_device(device)
-    init_process_group(backend=backend)
-    torch.accelerator.set_device_index(rank)
+    """
+    Converting the old `torch.accelerator.*` code to `torch.cuda.*`
+    """
+    if not torch.cuda.is_available():
+        raise RuntimeError("CUDA not available and ddp_setup() expects onboard GPUs...")
+    local_rank = int(os.environ["LOCAL_RANK"])      # Per node rank, 0...(nproc_per_node-1)
+    rank       = int(os.environ.get("RANK", 0))         # Global rank/GPU ID
+    world_size = int(os.environ.get("WORLD_SIZE",1))
+
+    # Setting the backend comm suite to NCCL for NVIDIA
+    backend = "nccl"
+
+    # Pinning the process to its GPU
+    torch.cuda.set_device(local_rank)
+    device = torch.device(f"CUDA:{local_rank}")
+
+    # Init process group
+    init_process_group(backend=backend, rank=rank, world_size=world_size)
 
 def get_train_objs(gpt_cfg: GPTConfig, opt_cfg: OptimizerConfig, data_cfg: DataConfig):
     dataset = CharDataset(data_cfg)
