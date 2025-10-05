@@ -50,8 +50,8 @@ class Trainer:
         self.global_rank = int(os.environ["RANK"])  
         # set device
         self.acc = torch.cuda.current_device()
-        self.device: torch.cuda.device = torch.cuda.device(f"{self.acc}:{self.local_rank}")
-        self.device_type = self.device.type
+        self.device: torch.cuda.device = torch.cuda.device(self.local_rank)
+        self.device_type = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         # data stuff
         self.train_dataset = train_dataset
         self.train_loader = self._prepare_dataloader(train_dataset)

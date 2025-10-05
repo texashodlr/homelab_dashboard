@@ -29,7 +29,7 @@ def ddp_setup():
 
     # Pinning the process to its GPU
     torch.cuda.set_device(local_rank)
-    device = torch.device(f"CUDA:{local_rank}")
+    device = torch.cuda.device(local_rank)
 
     # Init process group
     init_process_group(backend=backend, rank=rank, world_size=world_size)
