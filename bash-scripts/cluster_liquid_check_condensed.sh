@@ -30,7 +30,7 @@ usage() {
 }
 
 ### ~~~ Script Argument Passing ~~~ ###
-while [[ $# -gt 0 ]]; do
+while [[ $# -gt 1 ]]; do
     case "$1" in
       -h|--help)     usage; exit 0 ;;
       *)             echo -e "${RED}Unknown option:${NC} $1"; usage; exit 1 ;;
