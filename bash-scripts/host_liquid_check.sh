@@ -2,12 +2,11 @@
 set -euo pipefail
 
 ### ~~~ Script Directory and Cluster Variables ~~~ ###
-# Expection for running the script:
+# Expectation for running the script:
 #   ./host_liquid_check.sh SERVER
-#               or
-#   echo "SERVER1 SERVER1....." | xargs -i -P 2 ./host_liquid_check.sh {}
-NAME=${1}
-DATASTORE="ipmi.json"
+#     or
+#   printf '%s\n' SERVER1 SERVER2 ... | xargs -n1 -P 2 ./host_liquid_check.sh
+DATASTORE="ipmi.json"   # (not used here; kept for context)
 ENDPOINT="/redfish/v1/Chassis/1/Sensors/LiquidLeak"
 
 ### ~~~ Script Coloring Template ~~~ ###
@@ -19,46 +18,49 @@ NC='\033[0m' # No Color
 
 ### ~~~ Script CLI Definition ~~~ ###
 usage() {
-    # Where Basename "$0" is the script name
-    echo -e "${BOLD}Usage:{NC}
-    $(basename "$0") [SERVER-IP-00]
+  # Where basename "$0" is the script name
+  echo -e "${BOLD}Usage:${NC}
+  $(basename "$0") ${BOLD}[SERVER-NAME-OR-IP]${NC}
 
-    ${BOLD}Description:${NC}
-    $(basename "$0") accepts server ip(s) (ex: ${BOLD}tus1-p1-g1${NC}, queries the server's Redfish LiquidLeak sensor via ${BOLD}./redfishcmd${NC},
-    and stdouts if a leak is detected."
+  ${BOLD}Description:${NC}
+  $(basename "$0") accepts a server (e.g., ${BOLD}tus1-p1-g1${NC}), queries the server's
+  Redfish LiquidLeak sensor via ${BOLD}./redfishcmd${NC}, and prints a status line."
 }
 
-### ~~~ Script Argument Passing ~~~ ###
-while [[ $# -gt 1 ]]; do
-    case "$1" in
-      -h|--help)     usage; exit 0 ;;
-      *)             echo -e "${RED}Unknown option:${NC} $1"; usage; exit 1 ;;
-    esac
+### ~~~ Script Argument Parsing ~~~ ###
+NAME=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help) usage; exit 0 ;;
+    -*) echo -e "${RED}Unknown option:${NC} $1"; usage; exit 1 ;;
+    *) NAME="$1"; shift; break ;;   # first non-flag is the server name
+  esac
 done
 
 ### ~~~ Script Preflight Checks START ~~~ ###
-    ### ~~~ IP Validation ~~~ ###
-if [ -z "$NAME" ]; then
-    echo "Unable to determine IP for $NAME" 1>&2
-    exit 1
+# Name provided?
+if [[ -z "${NAME:-}" ]]; then
+  echo -e "${RED}Missing server argument.${NC}"; usage
+  exit 1
 fi
 
-    ### ~~~ Redfishcmd Exists ~~~ ###
+# redfishcmd present and executable?
 if [[ ! -x "./redfishcmd" ]]; then
   echo -e "${RED}Missing or non-executable:${NC} ./redfishcmd"
   exit 1
 fi
 
-    ### ~~~ jq Installed ~~~ ###
+# jq present?
 if ! command -v jq >/dev/null 2>&1; then
   echo -e "${RED}jq not found${NC} (required)"
   exit 1
 fi
 ### ~~~ Script Preflight Checks END ~~~ ###
 
-### ~~~ Script Initiation Checks ~~~ ###
+### ~~~ Script Initiation Banner ~~~ ###
 echo -e "${BOLD}Scanning for leaks..${NC}"
-echo -e "  Datastore : ${BOLD}${DATASTORE}${NC}"
+echo -e "  Datastore : ${BOLD}${DATASTORE}${NC}  (info)"
 echo -e "  Endpoint  : ${BOLD}${ENDPOINT}${NC}"
 echo -e "  Server    : ${BOLD}${NAME}${NC}"
 echo
@@ -70,8 +72,13 @@ LIQUID_LEAK="$(./redfishcmd "$NAME" "$ENDPOINT" | jq -r '.Oem.Supermicro.SensorV
 if [[ -z "$LIQUID_LEAK" ]]; then
   echo -e "${YELLOW}${NAME}${NC} -- Sensor value ${YELLOW}missing/empty${NC}"
   exit 0
+fi
+
 if [[ "$LIQUID_LEAK" == *"leakage detected"* ]]; then
   echo -e "${RED}${NAME}${NC} -- ${BOLD}Leak Detected${NC}"
+  exit 0
+elif [[ "$LIQUID_LEAK" == *"is not responding"* ]]; then
+  echo -e "${YELLOW}${NAME}${NC} -- Failed to connect"
   exit 0
 else
   echo -e "${GREEN}${NAME}${NC} -- No leak"

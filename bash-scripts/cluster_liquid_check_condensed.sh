@@ -76,41 +76,36 @@ if [[ ${#SERVER_NAMES[@]} -eq 0 ]]; then
 fi
 
 ### ~~~ Script makes temp csv and inputs headers ~~~ ###
-TMP_OUT="$(mktmp)"
+TMP_OUT="$(mktemp)"
 echo "name,status" > "$TMP_OUT"
 
-### ~~~ Script Loop Begins ~~~ ###
-LEAK_COUNT=0            # Counter for detected water leaks
-FAIL_COUNT=0            # Counter for fail to connects "[SERVER] is not responding..."
-TOTAL=${#SERVER_NAMES[@]}
-for NAME in "${SERVER_NAMES[@]}"; do
-  # Query Redfish for leak sensor value
-  # Could // empty to avoid 'null' if path missing
-  LIQUID_LEAK="$(./redfishcmd "$NAME" "$ENDPOINT" | jq -r '.Oem.Supermicro.SensorValue // empty' || true)"
+export ENDPOINT TMP_OUT RED GREEN YELLOW BOLD NC
 
-  if [[ -z "$LIQUID_LEAK" ]]; then
-    echo -e "${YELLOW}${NAME}${NC} -- Sensor value ${YELLOW}missing/empty${NC}"
-    continue
-  
-  if [[ "$LIQUID_LEAK" == *"leakage detected"* ]]; then
-    echo -e "${RED}${NAME}${NC} -- ${BOLD}Leak Detected${NC}"
-    printf "%s,%s\n" "$NAME" "Leak Detected" >> "$TMP_OUT"
-    ((LEAK_COUNT++))
-    # Output to CSV
-  elif [[ "$LIQUID_LEAK" == *"is not responding"* ]]; then
-    echo -e "${YELLOW}${NAME}${NC} -- Failed to connect"
-    ((FAIL_COUNT++))
-    # Not output to CSV 
-  else
-    echo -e "${GREEN}${NAME}${NC} -- No leak"
-    # Not output to CSV
-  fi
-done
+check_one(){
+	local NAME="$1"
+	LIQUID_LEAK="$(./redfishcmd "$NAME" "$ENDPOINT" | jq -r '.Oem.Supermicro.SensorValue // empty' || true)"
+	
+	if [[ -z "$LIQUID_LEAK" ]]; then
+		echo -e "${YELLOW}${NAME}${NC} -- Sensor value ${YELLOW}missing/empty${NC}"
+		return
+	fi
+	if [[ "$LIQUID_LEAK" == *"leakage detected"* ]]; then
+		echo -e "${RED}${NAME}${NC} -- ${BOLD}Leak Detected${NC}"
+		printf "%s,%s\n" "$NAME" "Leak Detected" >> "$TMP_OUT"
+	elif [[ "$LIQUID_LEAK" == *"is not responding"* ]]; then
+		echo -e "${YELLOW}${NAME}${NC} -- Failed to connect"
+	fi
+}
+export -f check_one
+
+# Running the cluster checks in parallel
+printf '%s\n' "${SERVER_NAMES[@]}" | xargs -I{} -P 8 bash -c 'check_one "$@"' _ {}
+
 
 mv "$TMP_OUT" "$OUTFILE"
 
 echo
-echo -e "${BOLD}Done!${NC} Checked ${BOLD}${TOTAL}${NC} servers."
-echo -e "  ${RED}Leaks Detected:${NC} ${BOLD}${LEAK_COUNT}${NC}"
-echo -e "  ${Yellow}Failed Connects:${NC} ${BOLD}${FAIL_COUNT}${NC}"
+#echo -e "${BOLD}Done!${NC} Checked ${BOLD}${TOTAL}${NC} servers."
+#echo -e "  ${RED}Leaks Detected:${NC} ${BOLD}${LEAK_COUNT}${NC}"
+#echo -e "  ${Yellow}Failed Connects:${NC} ${BOLD}${FAIL_COUNT}${NC}"
 echo -e "  CSV Written to: ${BOLD}${OUTFILE}${NC}"
