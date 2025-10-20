@@ -21,7 +21,7 @@ NC='\033[0m'
 ### ~~~ Script CLI Definition ~~~ ###
 usage() {
     # Where Basename "$0" is the script name
-    echo -e "${BOLD}Usage:{NC}
+    echo -e "${BOLD}Usage:${NC}
     $(basename "$0")
 
     ${BOLD}Description:${NC}
@@ -30,7 +30,7 @@ usage() {
 }
 
 ### ~~~ Script Argument Passing ~~~ ###
-while [[ $# -gt 1 ]]; do
+while [[ $# -gt 0 ]]; do
     case "$1" in
       -h|--help)     usage; exit 0 ;;
       *)             echo -e "${RED}Unknown option:${NC} $1"; usage; exit 1 ;;
@@ -99,7 +99,7 @@ check_one(){
 export -f check_one
 
 # Running the cluster checks in parallel
-printf '%s\n' "${SERVER_NAMES[@]}" | xargs -I{} -P 8 bash -c 'check_one "$@"' _ {}
+printf '%s\n' "${SERVER_NAMES[@]}" | xargs -r -n1 -P8 bash -c 'check_one "$1"' _
 
 
 mv "$TMP_OUT" "$OUTFILE"
