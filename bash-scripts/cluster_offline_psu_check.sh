@@ -1,21 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
-# Directions: (Sean) We're going to do the same process for liquid leaks 
-#   only for power supply health. We want to check for power supplies that may be offline.
-
-# Provided Scripts (Sean):
-# "Here's a short script that will check all the power supply 
-#    input voltages and output hosts that have one or more input lines down:"
-# cat ipmi.json | jq -r '.[] |select(.name|startswith("tus1-p"))|select(.pod>0).name' | xargs -i -P 16 /bin/bash -c "./query_power.sh {} | jq -r '.|select(.power[].LineInputVoltage<100) |\"Server \(.hostname) in Rack \(.rack | if . == \"\" then \"???\" else . end) at RU \(.ru | if . == \"\" then \"??\" else . end) is showing \([.power[]|select(.LineInputVoltage<100)]|length) power supply at 0v\"'" | sort
-
-
 ### ~~~ Script Directory and Cluster Variables ~~~ ###
 DATASTORE="ipmi.json"                               # File for server names
-OUTFILE="cluster_offline_psu.csv"                   # File to save leak info
-QUERY_POWER="query_power.sh"                        # File for querying power
+OUTFILE="cluster_offline_psus.csv"                  # File to save leak info
 PREFIX="tus1-p"                                     # Current naming prefix
-ENDPOINT="/redfish/v1/Chassis/1/Sensors/LiquidLeak" # Redfish leak endpoint
 
 ### ~~~ Script Coloring Template ~~~ ###
 RED='\033[0;31m'
@@ -27,17 +16,16 @@ NC='\033[0m'
 ### ~~~ Script CLI Definition ~~~ ###
 usage() {
     # Where Basename "$0" is the script name
-    echo -e "${BOLD}Usage:{NC}
+    echo -e "${BOLD}Usage:${NC}
     $(basename "$0")
 
     ${BOLD}Description:${NC}
-    $(basename "$0") reads ${BOLD}ipmi.json${NC}, queries every server in the cluster's output power supply input voltages for the given server 
-    via ${BOLD}./query_power.sh${NC},
-    and writes a CSV of servers where a PSU line is down."
+    $(basename "$0") reads ${BOLD}ipmi.json${NC}, queries each server's PSU to verify if its offline via ${BOLD}./query_power.sh${NC},
+    and writes a CSV of servers where a psu is at 0 volts (v) (basically offline)."
 }
 
 ### ~~~ Script Argument Passing ~~~ ###
-while [[ $# -gt 1 ]]; do
+while [[ $# -gt 0 ]]; do
     case "$1" in
       -h|--help)     usage; exit 0 ;;
       *)             echo -e "${RED}Unknown option:${NC} $1"; usage; exit 1 ;;
@@ -68,12 +56,10 @@ fi
 echo -e "${BOLD}Scanning for leaks..${NC}"
 echo -e "  Datastore : ${BOLD}${DATASTORE}${NC}"
 echo -e "  Prefix    : ${BOLD}${PREFIX}${NC}"
-echo -e "  Endpoint : ${BOLD}${ENDPOINT}${NC}"
 echo -e "  Output    : ${BOLD}${OUTFILE}${NC}"
 echo
 
 ### ~~~ Script Extracting Servers from ipmi.json ~~~ ###
-#cat ipmi.json | jq -r '.[] |select(.name|startswith("tus1-p"))|select(.pod>0).name'
 mapfile -t SERVER_NAMES < <(jq -r --arg p "$PREFIX" '.[] | select(.name | startswith($p)) | .name' "$DATASTORE")
     
 ### ~~~ If ipmi.json is empty exit ~~~ ###
@@ -84,49 +70,53 @@ if [[ ${#SERVER_NAMES[@]} -eq 0 ]]; then
 fi
 
 ### ~~~ Script makes temp csv and inputs headers ~~~ ###
-TMP_OUT="$(mktmp)"
-echo "name,status" > "$TMP_OUT"
+TMP_OUT="$(mktemp)"
+echo "name,rack,ru,status" > "$TMP_OUT"
 
-### ~~~ Script Loop Begins ~~~ ###
-OFFLINE_PSU_COUNT=0            # Counter for detected offline PSUs
-FAIL_COUNT=0                   # Counter for fail to connects "[SERVER] is not responding..."
-TOTAL=${#SERVER_NAMES[@]}
-for NAME in "${SERVER_NAMES[@]}"; do
-  # Query Redfish for leak sensor value
-  # Could // empty to avoid 'null' if path missing
-  # "./query_power.sh {} | jq -r '.|select(.power[].LineInputVoltage<100) |\"Server \(.hostname) in Rack \(.rack | if . == \"\" then \"???\" else . end) at RU \(.ru | if . == \"\" then \"??\" else . end) is showing \([.power[]|select(.LineInputVoltage<100)]|length) power supply at 0v\"'" | sort
-  OFFLINE_PSU="$(./query_power "$NAME" | '.|select(.power[].LineInputVoltage<100) |\"Server \(.hostname) in Rack \(.rack | if . == \"\" then \"???\" else . end) at RU \(.ru | if . == \"\" then \"??\" else . end) is showing \([.power[] | select(.LineInputVoltage<100)] | length) power supply at 0v\"'" | sort)"
+export TMP_OUT RED GREEN YELLOW BOLD NC
 
-  if [[ -z "$OFFLINE_PSU" ]]; then
-    echo -e "${YELLOW}${NAME}${NC} -- Sensor value ${YELLOW}missing/empty${NC}"
-    continue
-  
-  if [[ "$OFFLINE_PSU" == *"leakage detected"* ]]; then
-    echo -e "${RED}${NAME}${NC} -- ${BOLD}Leak Detected${NC}"
-    printf "%s,%s\n" "$NAME" "Leak Detected" >> "$TMP_OUT"
-    ((OFFLINE_PSU_COUNT++))
-    # Output to CSV
-  elif [[ "$OFFLINE_PSU" == *"is not responding"* ]]; then
-    echo -e "${YELLOW}${NAME}${NC} -- Failed to connect"
-    ((FAIL_COUNT++))
-    # Not output to CSV 
-  else
-    echo -e "${GREEN}${NAME}${NC} -- No offline PSUs detected"
-    # Not output to CSV
-  fi
-done
+check_one(){
+	local NAME="$1"
+    local PSU_OFFLINE
+    PSU_OFFLINE="$(
+    ./query_power.sh "$NAME" |
+    jq -r --arg host "$NAME" '
+      . as $r
+      | ([ $r.power[]? | select(.LineInputVoltage < 100) ] | length) as $bad
+      | (($r.rack // "") | if . == "" then "???" else . end) as $rack
+      | (($r.ru   // "") | if . == "" then "??"  else . end) as $ru
+      | select($bad > 0)
+      | ("PSUs at 0v: " + (if $bad == 1 then "1 PSU" else ($bad|tostring + " PSUs") end)) as $status
+      | "\($host)\t\($rack)\t\($ru)\t\($status)"
+    '
+  )"
+	if [[ -n "$PSU_OFFLINE" ]]; then
+      local HOST RACK RU STATUS
+      IFS=$'\t' read -r HOST RACK RU STATUS <<<"$PSU_OFFLINE"
+      echo -e "${RED}${HOST}${NC} (${BOLD}Rack:${NC} ${RACK}, ${BOLD}RU:${NC} ${RU}) -- ${BOLD}${STATUS}${NC}"
+      printf "%s,%s,%s,%s\n" "$NAME" "$RACK" "$RU" "0v PSU detected" >> "$TMP_OUT"
+      return
+	#if [[ "$PSU_OFFLINE" == *"power supply at 0v"* ]]; then
+	#	echo -e "${RED}${NAME}${NC} -- ${BOLD}0v PSU detected${NC}"
+	#	printf "%s,%s,%s%s\n" "$NAME" "$RACK" "$RU" "0v PSU detected" >> "$TMP_OUT"
+	elif [[ "$PSU_OFFLINE" == *"is not responding"* ]]; then
+		echo -e "${YELLOW}${NAME}${NC} -- Failed to connect"
+	fi
+}
+export -f check_one
+
+# Running the cluster checks in parallel
+printf '%s\n' "${SERVER_NAMES[@]}" | xargs -r -n1 -P8 bash -c 'check_one "$1"' _
+
 
 mv "$TMP_OUT" "$OUTFILE"
+FAIL_COUNT=$(wc -l "$OUTFILE")
 
 echo
-echo -e "${BOLD}Done!${NC} Checked ${BOLD}${TOTAL}${NC} servers."
-echo -e "  ${RED}Leaks Detected:${NC} ${BOLD}${LEAK_COUNT}${NC}"
-echo -e "  ${Yellow}Failed Connects:${NC} ${BOLD}${FAIL_COUNT}${NC}"
+#echo -e "${BOLD}Done!${NC} Checked ${BOLD}${TOTAL}${NC} servers."
+#echo -e "  ${RED}Leaks Detected:${NC} ${BOLD}${LEAK_COUNT}${NC}"
+echo -e "  ${YELLOW}Failed Connects:${NC} ${BOLD}${FAIL_COUNT}${NC}"
 echo -e "  CSV Written to: ${BOLD}${OUTFILE}${NC}"
 
-cat ipmi.json 
-| jq -r '.[] |select(.name|startswith("tus1-p"))|select(.pod>0).name' 
-| xargs -i -P 16 /bin/bash -c "./query_power.sh {} 
-  | jq -r '.|select(.power[].LineInputVoltage<100) | \"Server \(.hostname) in Rack \(.rack | if . == \"\" then \"???\" else . end) at RU \(.ru | if . == \"\" then \"??\" else . end) is showing \([.power[]|select(.LineInputVoltage<100)]|length) power supply at 0v\"'
-    " 
-| sort
+
+# ./query_power.sh tus1-p6-g14 | jq -r '. | select(.power[].LineInputVoltage < 100) | "Server \(.hostname) in Rack \(.rack | if . == "" then "???" else . end) at RU \(.ru | if . == "" then "??" else . end) is showing \([.power[] | select(.LineInputVoltage < 100)] | length) power supply at 0v"'
