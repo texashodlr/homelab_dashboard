@@ -1,0 +1,41 @@
+### ~~~ Script makes temp csv and inputs headers ~~~ ###
+TMP_OUT="$(mktemp)"
+LOCK_FILE="${TMP_OUT}.lock"
+echo "name,nvme-ssd1-sn,nvme-ssd1-health,nvme-ssd2-sn,nvme-ssd2-health,nvme-ssd3-sn,nvme-ssd3-health,nvme-ssd4-sn,nvme-ssd4-health,status" > "$TMP_OUT"
+
+export TMP_OUT LOCK_FILE RED GREEN YELLOW BOLD NC
+
+check_one(){
+  local NAME="$1"
+  
+  # Jitter control to not timeout BMCs
+  sleep $((RANDOM % 200))e-3
+
+
+  local -a SNs=() Healths=()
+  
+  local STATUS=''
+  for i in $(seq 1 4); do
+    local NAME="$1"
+    read -r sn health < <(./redfishcmd "$NAME" "/redfish/v1/Chassis/1/PCIeDevices/NVMeSSD$i" | jq -r '[.SerialNumber, .Status.Health] | @tsv')
+    SNs[i]=$sn
+    Healths[i]=$health
+    if [[ "$sn" == *"UNKNOWN"* || "$health" != *"OK"* ]]; then
+      STATUS="potential nvme drive bad"
+    fi
+  done
+  printf "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n" "$NAME" "${SNs[1]}" "${Healths[1]}" "${SNs[2]}" "${Healths[2]}" "${SNs[3]}" "${Healths[3]}" "${SNs[4]}" "${Healths[4]}" "$STATUS">> $TMP_OUT
+}
+export -f check_one
+
+# Running the cluster checks in parallel
+printf '%s\n' "${SERVER_NAMES[@]}" | xargs -r -n1 -P2 bash -c 'check_one "$1"' _
+
+mv -- "$TMP_OUT" "$OUTFILE"
+echo
+echo -e "  CSV Written to: ${BOLD}${OUTFILE}${NC}"
+
+
+# Output CSV
+# server,rack,ru,nvmessd1-sn,nvmessd2-sn,nvmessd3-sn,nvmessd4-sn
+# tus1-p16-g56,100,1,
