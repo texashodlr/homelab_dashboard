@@ -3,6 +3,7 @@ set -euo pipefail
 
 
 ### ~~~ Script Directory and Cluster Variables ~~~ ###
+NAME=${1}
 DATASTORE="cluster_offline_psus.csv"                               # File for server names
 OUTFILE="cluster_offline_psus_detailed.csv"
 
@@ -25,7 +26,7 @@ usage() {
 }
 
 ### ~~~ Script Argument Passing ~~~ ###
-while [[ $# -gt 0 ]]; do
+while [[ $# -gt 1 ]]; do
     case "$1" in
       -h|--help)     usage; exit 0 ;;
       *)             echo -e "${RED}Unknown option:${NC} $1"; usage; exit 1 ;;
@@ -34,10 +35,6 @@ done
 
 ### ~~~ Script Preflight Checks START ~~~ ###
     ### ~~~ CSV Exists ~~~ ###
-if [[ ! -f "$DATASTORE" ]]; then
-  echo -e "${RED}Missing datastore:${NC} ${DATASTORE}"
-  exit 1
-fi
 
     ### ~~~ Query Power Script Exists ~~~ ###
 if [[ ! -x "./query_power.sh" ]]; then
@@ -52,43 +49,23 @@ if ! command -v jq >/dev/null 2>&1; then
 fi
 ### ~~~ Script Preflight Checks END ~~~ ###
 
-### ~~~ Script makes temp csv and inputs headers ~~~ ###
-TMP_OUT="$(mktemp)"
-echo "name,rack,ru,psu-b1,psu-b2,psu-b3,psu-b4" > "$TMP_OUT"
+### ~~~ Script Host PSU Check Command ~~~ ###
+LINE="$( { RAW=$(timeout -k 2 15 ./query_power.sh "$NAME" 2>&1); rc=$?; if ((rc!=0)) || [[ -z "$RAW" ]]; then printf '%s,???,??,,,,' "$NAME"; else jq -r --arg host "$NAME" '. as $r
+| (($r.rack // "") | if . == "" then "???" else . end) as $rack
+| (($r.ru   // "") | if . == "" then "??"  else . end) as $ru
+| ($r.power // [] | sort_by(.id | tonumber)) as $p
+| ($p[0].LineInputVoltage | tonumber? // 0) as $b1
+| ($p[1].LineInputVoltage | tonumber? // 0) as $b2
+| ($p[2].LineInputVoltage | tonumber? // 0) as $b3
+| ($p[3].LineInputVoltage | tonumber? // 0) as $b4
+| "\($host),\($rack),\($ru),\($b1),\($b2),\($b3),\($b4)"' <<<"$RAW" || printf '%s,???,??,,,,' "$NAME"; fi; })"
 
-awk -F, 'NR>1 {print $1}' cluster_offline_psus.csv | while read -r NAME; do
+### ~~~ Script Host Liquid Leak Catch ~~~ ###
+if [[ -z "$LINE" ]]; then
+  echo -e "${YELLOW}${NAME}${NC} -- Sensor value ${YELLOW}missing/empty${NC}"
+  exit 0
+fi
 
-    RAW=$(timeout -k 2 15 ./query_power.sh "$NAME" 2>&1 )
-    rc=$?
-
-    if (( rc != 0)) || [[ -z "$RAW" ]]; then
-        printf '%s,%s,%s,%s,%s,%s,%s\n' "$NAME" "???" "??" "" "" "" "" >> "$TMP_OUT"
-        echo "WARN: $NAME connection failed (rc=$rc)"
-        continue
-    fi
-    LINE=$(
-        jq -r --arg host "$NAME" '
-        . as $r
-        | (($r.rack // "") | if . == "" then "???" else . end) as $rack
-        | (($r.ru   // "") | if . == "" then "??"  else . end) as $ru
-        | ($r.power // [] | sort_by(.id | tonumber)) as $p
-        | ($p[0].LineInputVoltage | tonumber? // 0) as $b1
-        | ($p[1].LineInputVoltage | tonumber? // 0) as $b2
-        | ($p[2].LineInputVoltage | tonumber? // 0) as $b3
-        | ($p[3].LineInputVoltage | tonumber? // 0) as $b4
-        | "\($host),\($rack),\($ru),\($b1),\($b2),\($b3),\($b4)"
-        ' 2>/dev/null <<<"$RAW"
-    )
-
-    if [[ -z "$LINE" ]]; then
-      printf '%s,%s,%s,%s,%s,%s,%s\n' "$NAME" "???" "??" "" "" "" "" >> "$TMP_OUT"
-      echo "WARN: $NAME produced unparsable JSON"
-      continue
-    fi
-
-    printf '%s\n' "$LINE" >> "$TMP_OUT"
-done
-
-mv -- "$TMP_OUT" "$OUTFILE"
-echo
-echo -e "  CSV Written to: ${BOLD}${OUTFILE}${NC}"
+echo    "                           name,rack,ru,psu-b1,psu-b2,psu-b3,psu-b4"
+echo -e "${BOLD}PSU STATUS:${NC}${YELLOW}${NAME}${NC} --> ${RED}${LINE}${NC}\\n"
+exit 0
