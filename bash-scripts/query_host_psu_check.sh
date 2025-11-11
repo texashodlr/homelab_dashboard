@@ -4,7 +4,7 @@ set -euo pipefail
 
 ### ~~~ Script Directory and Cluster Variables ~~~ ###
 NAME=${1}
-DATASTORE="cluster_offline_psus.csv"                               # File for server names
+DATASTORE="ipmi.json"                       # File for server names
 OUTFILE="cluster_offline_psus_detailed.csv"
 
 ### ~~~ Script Coloring Template ~~~ ###
@@ -49,23 +49,51 @@ if ! command -v jq >/dev/null 2>&1; then
 fi
 ### ~~~ Script Preflight Checks END ~~~ ###
 
-### ~~~ Script Host PSU Check Command ~~~ ###
-LINE="$( { RAW=$(timeout -k 2 15 ./query_power.sh "$NAME" 2>&1); rc=$?; if ((rc!=0)) || [[ -z "$RAW" ]]; then printf '%s,???,??,,,,' "$NAME"; else jq -r --arg host "$NAME" '. as $r
-| (($r.rack // "") | if . == "" then "???" else . end) as $rack
-| (($r.ru   // "") | if . == "" then "??"  else . end) as $ru
-| ($r.power // [] | sort_by(.id | tonumber)) as $p
-| ($p[0].LineInputVoltage | tonumber? // 0) as $b1
-| ($p[1].LineInputVoltage | tonumber? // 0) as $b2
-| ($p[2].LineInputVoltage | tonumber? // 0) as $b3
-| ($p[3].LineInputVoltage | tonumber? // 0) as $b4
-| "\($host),\($rack),\($ru),\($b1),\($b2),\($b3),\($b4)"' <<<"$RAW" || printf '%s,???,??,,,,' "$NAME"; fi; })"
+### ~~~ Script Host PSU Check (split into variables) ~~~ ###
+rack="???" ; ru="??"
+declare -a PSU_V       # 1..4
+PSU_V=(unused "" "" "" "")  # pad index 0
 
-### ~~~ Script Host Liquid Leak Catch ~~~ ###
-if [[ -z "$LINE" ]]; then
-  echo -e "${YELLOW}${NAME}${NC} -- Sensor value ${YELLOW}missing/empty${NC}"
-  exit 0
+RAW=$(timeout -k 2 15 ./query_power.sh "$NAME" 2>&1)
+rc=$?
+
+if (( rc != 0 )) || [[ -z "$RAW" ]]; then
+  # Keep defaults: rack="???", ru="??", PSU_V[1..4]=""
+  :
+else
+  # rack, ru, b1..b4 as TSV; volts coerced with tonumber? // 0
+  TSV=$(jq -r '
+    . as $r
+    | [ (($r.rack // "") | if .=="" then "???" else . end)
+      ,(($r.ru   // "") | if .=="" then "??"  else . end)
+      ,($r.power // [] | sort_by(.id | tonumber)
+         | [.[0].LineInputVoltage, .[1].LineInputVoltage, .[2].LineInputVoltage, .[3].LineInputVoltage]
+         | map(tonumber? // 0)
+         | .[]
+       )
+      ] | @tsv
+  ' <<<"$RAW" 2>/dev/null || true)
+
+  if [[ -n "$TSV" ]]; then
+    IFS=$'\t' read -r rack ru b1 b2 b3 b4 <<<"$TSV"
+    PSU_V[1]="$b1"; PSU_V[2]="$b2"; PSU_V[3]="$b3"; PSU_V[4]="$b4"
+  fi
 fi
 
-echo    "                           name,rack,ru,psu-b1,psu-b2,psu-b3,psu-b4"
-echo -e "${BOLD}PSU STATUS:${NC}${YELLOW}${NAME}${NC} --> ${RED}${LINE}${NC}\\n"
+# ------ From here down, you can format however you like. Examples: ------
+
+# 1) CSV line (exactly like your old $LINE content but built from vars)
+#LINE="${NAME},${rack},${ru},${PSU_V[1]},${PSU_V[2]},${PSU_V[3]},${PSU_V[4]}"
+
+# 2) Pretty print example (optional)
+#echo    "                           name,rack,ru,psu-b1,psu-b2,psu-b3,psu-b4"
+echo -e "${YELLOW}PSU STATUS:${NC}"
+echo -e "\\t\\tRack:${RED}${rack}${NC}"
+echo -e "\\t\\tRU  :${RED}${ru}${NC}"
+echo -e "\\t\\tPSU1:${RED}${b1}${NC}"
+echo -e "\\t\\tPSU2:${RED}${b2}${NC}"
+echo -e "\\t\\tPSU3:${RED}${b3}${NC}"
+echo -e "\\t\\tPSU4:${RED}${b4}${NC}"
+
+
 exit 0

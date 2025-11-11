@@ -75,5 +75,5 @@ for i in $(seq 0 1); do
   STATUS=$status
 done
 
-echo -e "${BOLD}M2 DRIVE STATUS:${NC}${YELLOW}${NAME}${NC} --> --   SSN, Status, Other Errs , Media Errs\\n\\t\\t\\t${BOLD}M2 DRIVE #1:${NC}${SNs[0]} , ${RED}${Healths[0]} , ${OtherErrCounts[0]} , ${MediaErrCounts[0]}${NC}\\n\\t\\t\\t${BOLD}M2 DRIVE #2:${NC}${SNs[1]} , ${RED}${Healths[1]} , ${OtherErrCounts[1]} , ${MediaErrCounts[1]}${NC}\\n\\t\\t\\t${BOLD}Overall M2 STATUS:${NC}\\t${RED}${STATUS}${NC}\\n"
+echo -e "${YELLOW}M2 DRIVE STATUS:${NC}\\n  ${YELLOW}M2 DRIVE #1:${NC}\\n\\tSSN: \\t  ${RED}${SNs[0]}${NC}\\n\\tHealth:   ${RED}${Healths[0]}${NC}\\n\\tOtherErr: ${RED}${OtherErrCounts[0]}${NC}\\n\\tMediaErr: ${RED}${MediaErrCounts[0]}${NC}\\n  ${YELLOW}M2 DRIVE #2:${NC}\\n\\tSSN: \\t  ${RED}${SNs[1]}${NC}\\n\\tHealth:   ${RED}${Healths[1]}${NC}\\n\\tOtherErr: ${RED}${OtherErrCounts[1]}${NC}\\n\\tMediaErr: ${RED}${MediaErrCounts[1]}${NC}\\n${YELLOW}Overall M2 Status:${NC}${RED}${STATUS}${NC}"
 exit 0

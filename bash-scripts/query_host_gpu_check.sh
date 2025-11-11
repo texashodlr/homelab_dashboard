@@ -45,11 +45,11 @@ if ! command -v jq >/dev/null 2>&1; then
 fi
 ### ~~~ Script Preflight Checks END ~~~ ###
 
-### ~~~ Script Executes NVME Checks ~~~ ###
-SNs=() Healths=()
+### ~~~ Script Executes GPU Checks ~~~ ###
+Models=() SNs=() FirmwareVersions=() Healths=() States=()
 STATUS=""
-for i in $(seq 1 4); do
-  RAW=$(timeout -k 2 10 ./redfishcmd "$NAME" "/redfish/v1/Chassis/1/PCIeDevices/NVMeSSD$i" 2>&1)
+for i in $(seq 1 8); do
+  RAW=$(timeout -k 2 10 ./redfishcmd "$NAME" "/redfish/v1/Chassis/1/PCIeDevices/GPU$i" 2>&1)
   rc=$?
   if ((rc !=0 )) || [[ -z "$RAW" ]]; then
     # Marked as unknown on failure
@@ -57,19 +57,30 @@ for i in $(seq 1 4); do
     continue
   fi
 
-  TSV=$(jq -r '[(.SerialNumber // ""), (.Status.Health // "")] | @tsv' <<<"$RAW" 2>/dev/null || TSV=$'\t')
+  TSV=$(jq -r '[(.Model // ""), (.SerialNumber // ""), (.FirmwareVersion // ""), (.Status.Health // ""), (.Status.State // "")] | @tsv' <<<"$RAW" 2>/dev/null || TSV=$'\t')
 
-  sn="" health="" status=""
-  IFS=$'\t' read -r sn health <<<"$TSV"
+  model="" sn="" firmwareversions="" health="" states="" status=""
+  IFS=$'\t' read -r model sn firmwareversions health states <<<"$TSV"
+  Models[i]="$model"
   SNs[i]="$sn"
+  FirmwareVersions[i]="$firmwareversions"
   Healths[i]="$health"
+  States[i]="$states"
   if [[ "$sn" == *"UNKNOWN"* || "$health" != *"OK"* ]]; then
-    status="potential nvme drive bad"
+    status="potential GPU bad"
   else
-    status="HEALTHY"
+    status="Healthy"
   fi
     STATUS=$status 
 done
+echo -e "${YELLOW}GPUs' STATUS:${NC} ${RED}${STATUS}${NC}"
+for j in $(seq 1 8); do
+  echo -e "\\t${BOLD}DRIVE #${j}:${NC}" 
+  echo -e "\\t\\t${BOLD}Model          :${NC} ${RED}${Models[$j]}${NC}"
+  echo -e "\\t\\t${BOLD}SN             :${NC} ${RED}${SNs[$j]}${NC}"
+  echo -e "\\t\\t${BOLD}FirmwareVersion:${NC} ${RED}${FirmwareVersions[$j]}${NC}"
+  echo -e "\\t\\t${BOLD}Health         :${NC} ${RED}${Healths[$j]}${NC}"
+  echo -e "\\t\\t${BOLD}State          :${NC} ${RED}${States[$j]}${NC}"
+done
 
-echo -e "${YELLOW}NVME DRIVE STATUS:${NC}\\n\\t${BOLD}DRIVE #1:${NC} ${SNs[1]} = ${RED}${Healths[1]}${NC}\\n\\t${BOLD}DRIVE #2:${NC} ${SNs[2]} = ${RED}${Healths[2]}${NC}\\n\\t${BOLD}DRIVE #3:${NC} ${SNs[3]} = ${RED}${Healths[3]}${NC}\\n\\t${BOLD}DRIVE #4:${NC} ${SNs[4]} = ${RED}${Healths[4]}${NC}\\n\\t${YELLOW}Overall NVME STATUS:${NC}\\t ${RED}${STATUS}${NC}\\n"
 exit 0

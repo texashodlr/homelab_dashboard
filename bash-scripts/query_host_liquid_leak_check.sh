@@ -71,17 +71,17 @@ LIQUID_LEAK="$(./redfishcmd "$NAME" "$ENDPOINT" | jq -r '.Oem.Supermicro.SensorV
 
 ### ~~~ Script Host Liquid Leak Catch ~~~ ###
 if [[ -z "$LIQUID_LEAK" ]]; then
-  echo -e "${YELLOW}${NAME}${NC} -- Sensor value ${YELLOW}missing/empty${NC}\\n"
+  echo -e "${YELLOW}${NAME}${NC} -- Sensor value ${YELLOW}missing/empty${NC}"
   exit 0
 fi
 
 if [[ "$LIQUID_LEAK" == *"leakage detected"* ]]; then
-  echo -e "${BOLD}LEAK STATUS:${NC}${YELLOW}${NAME}${NC} -- ${RED}Leak Detected${NC}\\n"
+  echo -e "${YELLOW}LEAK STATUS:${NC}\\t${RED}Leak Detected${NC}"
   exit 0
 elif [[ "$LIQUID_LEAK" == *"is not responding"* ]]; then
-  echo -e "${BOLD}LEAK STATUS:${NC}${YELLOW}${NAME}${NC} -- Failed to connect\\n"
+  echo -e "${YELLOW}LEAK STATUS:${NC}\\t${YELLOW}Failed to connect${NC}"
   exit 0
 else
-  echo -e "${BOLD}LEAK STATUS:${NC}${GREEN}${NAME}${NC} -- No leak\\n"
+  echo -e "${YELLOW}LEAK STATUS:${NC}\\t${GREEN}No leak${NC}"
 fi
 

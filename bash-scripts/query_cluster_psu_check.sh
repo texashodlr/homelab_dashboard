@@ -4,15 +4,8 @@ set -euo pipefail
 ### ~~~ Script Directory and Cluster Variables ~~~ ###
 LOG_DIR="$1"
 DATASTORE="$2"                               # File for server names
-OUTFILE="cluster_failed_nvme.csv"                  # File to save leak info
-ENDPOINT="/redfish/v1/Chassis/1/PCIeDevices/NVMeSSD[NUM]"
+OUTFILE="cluster_offline_psus.csv"                  # File to save leak info
 PREFIX="tus1-p"                                     # Current naming prefix
-
-  ### ~~~ Log Directory Exists ~~~ ###
-if [[ -z "$LOG_DIR" ]]; then
-  echo "Error: no log directory specified."
-  exit 1
-fi
 
 ### ~~~ Script Coloring Template ~~~ ###
 RED='\033[0;31m'
@@ -48,7 +41,7 @@ if [[ ! -f "$DATASTORE" ]]; then
 fi
 
     ### ~~~ Query Power Script Exists ~~~ ###
-if [[ ! -x "./redfishcmd" ]]; then
+if [[ ! -x "./query_power.sh" ]]; then
   echo -e "${RED}Missing or non-executable:${NC} ./redfishcmd"
   exit 1
 fi
@@ -61,9 +54,9 @@ fi
 ### ~~~ Script Preflight Checks END ~~~ ###
 
 ### ~~~ Script Initiation Checks ~~~ ###
-echo -e "${BOLD}Scanning for failed NVMe Drives...${NC}"
+echo -e "${BOLD}Scanning for leaks..${NC}"
+echo -e "  Datastore : ${BOLD}${DATASTORE}${NC}"
 echo -e "  Prefix    : ${BOLD}${PREFIX}${NC}"
-echo -e "  Endpoint : ${BOLD}${ENDPOINT}${NC}"
 echo -e "  Output    : ${BOLD}${OUTFILE}${NC}"
 echo
 
@@ -74,7 +67,7 @@ TOTAL=${#SERVER_NAMES[@]}
 ### ~~~ If ipmi.json is empty exit ~~~ ###
 if [[ ${#SERVER_NAMES[@]} -eq 0 ]]; then
   echo -e "${YELLOW}No servers found with prefix '${PREFIX}'.${NC}"
-  echo "name,rack,ru,nvme-ssd1-sn,nvme-ssd2-sn,nvme-ssd3-sn,nvme-ssd4-sn,status" > "$OUTFILE"
+  echo "name,rack,ru,status" > "$OUTFILE"
   exit 0
 fi
 
@@ -82,63 +75,48 @@ fi
 TMP_OUT="$(mktemp)"
 LOCK_FILE="${TMP_OUT}.lock"
 : > "$LOCK_FILE"
-echo "name,nvme-ssd1-sn,nvme-ssd1-health,nvme-ssd2-sn,nvme-ssd2-health,nvme-ssd3-sn,nvme-ssd3-health,nvme-ssd4-sn,nvme-ssd4-health,status" > "$TMP_OUT"
+echo "name,rack,ru,status" > "$TMP_OUT"
 
 export TMP_OUT LOCK_FILE RED GREEN YELLOW BOLD NC
 
 check_one(){
-  local NAME="$1"
-  
-  # Jitter control to not timeout BMCs
-  sleep $((RANDOM % 200))e-3
+	  local NAME="$1"
+    local PSU_OFFLINE
 
+    sleep $((RANDOM % 200))e-3
 
-  local -a SNs=() Healths=()
-  local STATUS=''
-  
-  for i in $(seq 1 4); do
-    local RAW rc
-    RAW=$(timeout -k 2 10 ./redfishcmd "$NAME" "/redfish/v1/Chassis/1/PCIeDevices/NVMeSSD$i" 2>&1)
-    rc=$?
-    if ((rc !=0 )) || [[ -z "$RAW" ]]; then
-      # Marked as unknown on failure
-      SNs[i]="" ; Healths[i]=""
-      continue
-    fi
-
-    local TSV
-    TSV=$(jq -r '[(.SerialNumber // ""), (.Status.Health // "")] | @tsv' <<<"$RAW" 2>/dev/null || TSV=$'\t')
-
-    local sn="" health="" status=""
-    IFS=$'\t' read -r sn health <<<"$TSV"
-    
-    SNs[i]="$sn"
-    Healths[i]="$health"
-    if [[ "$sn" == *"UNKNOWN"* || "$health" != *"OK"* ]]; then
-      status="potential nvme drive bad"
-    else
-      status="healthy"
-    fi
-    STATUS=$status 
-  done
-  #{ flock -x 200; printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' "$NAME" "${SNs[1]}" "${Healths[1]}" "${SNs[2]}" "${Healths[2]}" "${SNs[3]}" "${Healths[3]}" "${SNs[4]}" "${Healths[4]}" "$STATUS" >> "$TMP_OUT"; } 200>"$LOCK_FILE"
-
-  # CSV Row add to the lock file
-  if [[ "$STATUS" == "potential nvme drive is bad" ]]; then
-    # Basically only editing the file with broken drives, else ignore
-    { flock -x 200; printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' "$NAME" "${SNs[1]}" "${Healths[1]}" "${SNs[2]}" "${Healths[2]}" "${SNs[3]}" "${Healths[3]}" "${SNs[4]}" "${Healths[4]}" "$STATUS" >> "$TMP_OUT"; } 200>"$LOCK_FILE"
-  fi
+    PSU_OFFLINE=$(timeout -k 2 10 ./query_power.sh "$NAME" |
+    jq -r --arg host "$NAME" '
+      . as $r
+      | ([ $r.power[]? | select(.LineInputVoltage < 100) ] | length) as $bad
+      | (($r.rack // "") | if . == "" then "???" else . end) as $rack
+      | (($r.ru   // "") | if . == "" then "??"  else . end) as $ru
+      | select($bad > 0)
+      | ("PSUs at 0v: " + (if $bad == 1 then "1 PSU" else ($bad|tostring + " PSUs") end)) as $status
+      | "\($host)\t\($rack)\t\($ru)\t\($status)"
+    ')
+	if [[ -n "$PSU_OFFLINE" ]]; then
+      local HOST RACK RU STATUS
+      IFS=$'\t' read -r HOST RACK RU STATUS <<<"$PSU_OFFLINE"
+      echo -e "${RED}${HOST}${NC} (${BOLD}Rack:${NC} ${RACK}, ${BOLD}RU:${NC} ${RU}) -- ${BOLD}${STATUS}${NC}"
+      # printf "%s,%s,%s,%s\n" "$NAME" "$RACK" "$RU" "$STATUS" >> "$TMP_OUT"
+      { flock -x 200; printf "%s,%s,%s,%s\n" "$NAME" "$RACK" "$RU" "$STATUS" >> "$TMP_OUT"; } 200>"$LOCK_FILE"
+      return
+	elif [[ "$PSU_OFFLINE" == *"is not responding"* ]]; then
+		echo -e "${YELLOW}${NAME}${NC} -- Failed to connect"
+	fi
 }
 export -f check_one
 
 # Running the cluster checks in parallel
-printf '%s\n' "${SERVER_NAMES[@]}" | xargs -r -n1 -P4 bash -c 'check_one "$0"'
+printf '%s\n' "${SERVER_NAMES[@]}" | xargs -r -n1 -P4 bash -c 'check_one "$1"' _
 
-FAIL_DRIVE=$(awk -F, 'NR>1 && $NF ~ /nvme drive bad/ {c++} END{print c+0}' "$TMP_OUT")
+FAIL_DRIVE=$(awk -F, 'NR>1 && $NF ~ /PSUs at 0v/ {c++} END{print c+0}' "$TMP_OUT")
+
 mv -- "$TMP_OUT" "$LOG_DIR"/"$OUTFILE"
 rm -r -- "$LOCK_FILE"
 
 echo
 echo -e "${BOLD}Done!${NC} Checked ${BOLD}${TOTAL}${NC} servers."
-echo -e "  ${RED}Failed NVMe Drives:${NC} ${BOLD}${FAIL_DRIVE}${NC}"
+echo -e "  ${RED}Failed PSUs:${NC} ${BOLD}${FAIL_DRIVE}${NC}"
 echo -e "  CSV Written to: ${BOLD}${LOG_DIR}${OUTFILE}${NC}"

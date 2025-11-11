@@ -44,6 +44,9 @@ sleep 2
 #echo -e "~~~ [[[ HOST VALIDATION TEST 2/4 ]]] ~~~\\n"	
 	# All PSUs Online
 #echo "Performing host PSU check"
+./query_host_boot_status.sh "$NAME"
+sleep 2
+
 ./query_host_psu_check.sh "$NAME"
 #echo "Completed host PSU check"
 sleep 2
@@ -66,6 +69,17 @@ sleep 2
 ./query_host_m2_check.sh "$NAME"
 #echo "Completed detailed host M2 Drive check"
 sleep 2
+
+./query_host_gpu_check.sh "$NAME"
+sleep 2
+
+./query_host_nic_check.sh "$NAME"
+sleep 2
+
+echo -e "${YELLOW}QUERYING FIRMWARE${NC}\\n"
+./query_firmware.sh "$NAME"
+sleep 2
+echo -e "\\n"
 
 echo -e "${GREEN}~~~ [[[ CLUSTER VALIDATION TEST $(date +"%Y%m%d_%H%M%S") COMPLETED  ]]] ~~~${NC}"
 echo -e "${GREEN}~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~${NC}"
