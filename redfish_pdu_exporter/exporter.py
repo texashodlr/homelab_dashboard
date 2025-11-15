@@ -124,6 +124,13 @@ OUTLET_WATTS = Gauge(
     registry=REGISTRY,
 )
 
+OUTLET_VOLTS = Gauge(
+    "pdu_outlet_voltage",
+    "PDU outlet voltage (Volts)",
+    ["pdu", "ip", "outlet"] + ["rack", "row"],
+    registry=REGISTRY,
+)
+
 SCRAPE_OK = Gauge(
     "pdu_scrape_ok",
     "Last scrape success for this PDU (1=ok, 0=fail)",
@@ -238,7 +245,13 @@ class Collector:
         IN_FLIGHT.inc()
         try:
             with SCRAPE_LAT.time():
-                val = await self._rf.get_outlet_power(
+                val_power = await self._rf.get_outlet_power(
+                    ip=tgt.ip,
+                    outlet=outlet,
+                    username=self.cfg.auth_groups[tgt.auth_group].user,
+                    password=self.cfg.auth_groups[tgt.auth_group].password,
+                )
+                val_volts = await self._rf.get_outlet_volts(
                     ip=tgt.ip,
                     outlet=outlet,
                     username=self.cfg.auth_groups[tgt.auth_group].user,
@@ -247,8 +260,23 @@ class Collector:
         finally:
             IN_FLIGHT.dec()
 
-        if val is not None:
-            OUTLET_WATTS.labels(**labels).set(val)
+        if val_power is not None:
+            OUTLET_WATTS.labels(**labels).set(val_power)
+            SCRAPE_OK.labels(tgt.pdu, tgt.ip).set(1)
+            LAST_SUCCESS.labels(tgt.pdu, tgt.ip).set(time.time())
+            self._fail_streaks[tgt.ip] = 0
+        else:
+            # mark failure for this PDU
+            SCRAPE_OK.labels(tgt.pdu, tgt.ip).set(0)
+            streak = self._fail_streaks.get(tgt.ip, 0) + 1
+            self._fail_streaks[tgt.ip] = streak
+            if streak >= self.cfg.cb_fail_threshold:
+                # open circuit: back off for a few cycles
+                self._cooldown_left[tgt.ip] = self.cfg.cb_cooldown_cycles
+                # reset so we don't immediately retrigger after cooldown
+                self._fail_streaks[tgt.ip] = 0
+        if val_volts is not None:
+            OUTLET_VOLTS.labels(**labels).set(val_volts)
             SCRAPE_OK.labels(tgt.pdu, tgt.ip).set(1)
             LAST_SUCCESS.labels(tgt.pdu, tgt.ip).set(time.time())
             self._fail_streaks[tgt.ip] = 0

@@ -88,6 +88,28 @@ class RedfishClient:
         val = _extract_watts(data)
         return val
 
+    async def get_outlet_volts(
+        self,
+        ip: str,
+        outlet: int | str,
+        *,
+        username: str,
+        password: str,
+    ) -> Optional[float]:
+        outlet_str = str(outlet)
+        url = f"https://{ip}/redfish/v1/PowerEquipment/RackPDUs/1/Outlets/OUTLET{outlet_str}"
+        # curl -sk --user admin:87654321 https://$NAME/redfish/v1/PowerEquipment/RackPDUs/1/Outlets/OUTLET14 | jq -r '.Voltage.Reading'
+
+        data = await self._get_json_with_retries(
+            url,
+            auth=aiohttp.BasicAuth(username, password),
+        )
+        if data is None:
+            return None
+        
+        val = _extract_volts(data)
+        return val
+
     async def _get_json_with_retries(
         self,
         url: str,
@@ -177,7 +199,7 @@ def _extract_watts(data: dict[str, Any]) -> Optional[float]:
         data["Power"]["Reading"]
     """
     try:
-        pw = data.get("Voltage")
+        pw = data.get("PowerWatts")
         if isinstance(pw, dict):
             val = pw.get("Reading")
             if _is_number(val):
@@ -202,6 +224,30 @@ def _extract_watts(data: dict[str, Any]) -> Optional[float]:
     except Exception:
         pass
 
+    return None
+
+def _extract_volts(data: dict[str, Any]) -> Optional[float]:
+    """
+    Robustly extract a watts reading from common Redfish schemas.
+
+    Primary (as requested):
+        data["PowerWatts"]["Reading"]
+
+    Fallbacks seen in the wild (kept conservative):
+        data["PowerReading"] or data["PowerReading"]["Reading"]
+        data["Power"]["Reading"]
+    """
+    try:
+        pw = data.get("Voltage")
+        if isinstance(pw, dict):
+            val = pw.get("Reading")
+            if _is_number(val):
+                return float(val)
+    except Exception:
+        pass
+
+    # Conservative fallbacks
+    #   None
     return None
 
 def _is_number(x: Any) -> bool:
