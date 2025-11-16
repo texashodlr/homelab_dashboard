@@ -1,39 +1,116 @@
+import os
 import json
+import time
+import argparse
 import asyncio
+from typing import List, Tuple, Dict, Any
+
 from redfish_ttt import RedfishClient, ClientConfig
 # Used for looping through the cluster
 # Assumes IPMI.json formatting
 
-def load_ipmi_json(datastore_json_file, server_prefix, pdu_prefix):
+# ----------- Server Inventory ----------- #
+
+def load_ipmi_json(datastore_json_file: str, server_prefix: str, pdu_prefix: str) -> List[Tuple[str, str, str, str]]:
     with open(datastore_json_file, 'r') as file_handle:
         ipmi_list = json.load(file_handle)
     servers = []
     for node in ipmi_list:
-        if server_prefix in node['name'] and pdu_prefix not in node['name']:
+        n = node.get("name", "")
+        if server_prefix in n and pdu_prefix not in n:
             #print(f"name: {node['name']}, ip: {node['ip']}, ")
-            servers.append([node['name'], node['ip'], node['username'], node['password']])
+            servers.append((n, node.get("ip"), node.get("username"), node.get("password")))
     return servers
 
 
-async def main():
-    datastore_json_file = 'ipmi.json'
-    server_prefix = 'tus1-p'
-    pdu_prefix = 'tus1-pdu'
-    output_log_file = 'ttt.log'
+# ----------- Checks Registry ----------- #
+async def run_checks(rf: RedfishClient, ip: str, user: str, pw: str) -> Dict[str, Any]:
+    """
+    Add new checks here keeping return keys stable
+    Each check should return a dict or none
+    """
+    results: Dict[str, Any] = {}
+    
+    # 1. Liquid Leak Check
+    try:
+        ll = await rf.get_liquid_leak(ip=ip, username=user, password=pw)
+        results["liquid_leak"] = ll
+    except Exception as e:
+        results["liquid_leak"] = None
+        results.setdefault("_errors", []).append(f"liquid_leak:{type(e).__name__}")
+    
+    # -- Future -- #
+    # 2. CPU
+    # 3. HDD/SSD
+    # 4. Memory
+    # 5. NIC
+    # 6. GPU
+    # 7. Power
+    return results
+
+# ----------- Runner ----------- #
+async def sweep(
+    datastore_json_file: str,
+    server_prefix: str,
+    pdu_prefix: str,
+    out_path: str,
+    max_concurrency: int = 400,
+) -> None:
+    servers = load_ipmi_json(datastore_json_file, server_prefix, pdu_prefix)
     cfg = ClientConfig(
         connect_timeout_s=2.0,
         read_timeout_s=4.0,
         total_timeout_s=6.0,
         verify_ssl=False,
         max_retries=2,
-        per_request_semaphore=asyncio.Semaphore(400),  # global concurrency limit (optional)
+        per_request_semaphore=asyncio.Semaphore(max_concurrency),
     )
-    servers = load_ipmi_json(datastore_json_file, server_prefix, pdu_prefix)
+    # JSONL output
+    # One line per host: {"ts":..., "name":..., "ip":..., "status":"ok|fail", "checks":{...}}
     async with RedfishClient(cfg) as rf:
-        with open(output_log_file, 'w') as file:
-            for server in servers:
-                liquid_check = await rf.get_liquid_leak(ip=server[1], username=server[2], password=server[3])
-                file.write(f"{server[0]}: Status: {liquid_check}\n")
+        # Write as results complete (as_completed) to avoid holding everything in memory
+        async def do_one(name: str, ip: str, user: str, pw: str) -> str:
+            t0 = time.time()
+            status = "ok"
+            try:
+                checks = await run_checks(rf, ip, user, pw)
+            except Exception as e:
+                status = "fail"
+                checks = {"_errors": [f"runner:{type(e).__name__}"]}
+            rec = {
+                "ts": int(t0),
+                "name": name,
+                "ip": ip,
+                "status": status,
+                "checks": checks,
+            }
+            return json.dumps(rec, separators=(",", ":"), sort_keys=False)
+
+        tasks = [do_one(n, ip, u, p) for (n, ip, u, p) in servers]
+
+        # Append mode so multiple sweeps can be concatenated
+        with open(out_path, "a", buffering=1) as fh:
+            for fut in asyncio.as_completed(tasks):
+                line = await fut
+                fh.write(line + "\n")
+
+# ---------- cli ----------
+
+def parse_args():
+    ap = argparse.ArgumentParser(description="Timmy's Tensor Triage (TTT) (JSONL)")
+    ap.add_argument("--ipmi", default="ipmi.json", help="Path to ipmi.json")
+    ap.add_argument("--server-prefix", default="tus1-p", help="Server name prefix filter")
+    ap.add_argument("--pdu-prefix", default="tus1-pdu", help="PDU name prefix to exclude")
+    ap.add_argument("--out", default="ttt.jsonl", help="Output JSONL log file")
+    ap.add_argument("--concurrency", type=int, default=400, help="Max concurrent requests")
+    return ap.parse_args()
+
+async def main_async():
+    a = parse_args()
+    await sweep(a.ipmi, a.server_prefix, a.pdu_prefix, a.out, a.concurrency)
+
+def main():
+    asyncio.run(main_async())
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

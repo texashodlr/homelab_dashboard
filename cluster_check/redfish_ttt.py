@@ -6,7 +6,7 @@ import random
 import ssl
 import time
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Optional, Dict
 
 import aiohttp
 
@@ -18,18 +18,18 @@ class ClientConfig:
     connect_timeout_s: float = 2.0
     read_timeout_s: float = 4.0
     total_timeout_s: float = 6.0
-    verify_ssl: bool = False
-    user_agent: str = "pdu-exporter/0.1"
+    verify_ssl: bool = False            # self-signed BMC/PDUs
+    user_agent: str = "tw-redfish/0.1"
     max_retries: int = 2
     backoff_base_s: float = 0.2
     per_request_semaphore: Optional[asyncio.Semaphore] = None
 
 class RedfishClient:
     """
-    Async redfish client:
-        - Reuses a single aiohttp ClientSession (HTTP keep-alive)
-        - Optional concurrency control via semaphore
-        - Jittered exponentional backoff retries
+    Async Redfish client:
+      - Single aiohttp session (keep-alive)
+      - Optional global semaphore for concurrency
+      - Jittered exponential backoff retries
     """
 
     def __init__(self, cfg: Optional[ClientConfig] = None):
@@ -72,17 +72,38 @@ class RedfishClient:
         *,
         username: str,
         password: str,
-    ) -> Optional[float]:
+    ) -> Optional[Dict[str, Optional[str]]]:
+        """
+        Supermicro example:
+        GET /redfish/v1/Chassis/1/Sensors/LiquidLeak
+        Returns dict: {"health": ..., "location": ...} or None on failure/not present.
+        """
         url = f"https://{ip}/redfish/v1/Chassis/1/Sensors/LiquidLeak"
-        data = await self._get_json_with_retries(
-            url,
-            auth=aiohttp.BasicAuth(username, password),
-        )
+        data = await self._get_json_with_retries(url, auth=aiohttp.BasicAuth(username, password))
         if data is None:
             return None
-        
-        val = _extract_liquid_leak(data)
-        return val
+        return _extract_liquid_leak(data)
+    
+    # --- Placeholders for future expansion ---
+
+    async def get_cpu_health(self, ip: str, *, username: str, password: str) -> Optional[Dict[str, Any]]:
+        # Example endpoint (varies by vendor): /redfish/v1/Systems/1/Processors
+        # Return a dict like {"summary_health": "...", "processors": [{"id": "...", "health": "..."}]}
+        return None
+
+    async def get_gpu_health(self, ip: str, *, username: str, password: str) -> Optional[Dict[str, Any]]:
+        # Example OEM path may expose GPU sensors: /redfish/v1/Chassis/1/Sensors/<GPU>...
+        return None
+
+    async def get_nic_health(self, ip: str, *, username: str, password: str) -> Optional[Dict[str, Any]]:
+        # /redfish/v1/Systems/1/EthernetInterfaces or OEM NIC sensors
+        return None
+
+    async def get_memory_health(self, ip: str, *, username: str, password: str) -> Optional[Dict[str, Any]]:
+        # /redfish/v1/Systems/1/Memory
+        return None
+
+    # ---------- INTERNALS ----------
 
     async def _get_json_with_retries(
         self,
@@ -93,11 +114,8 @@ class RedfishClient:
         await self._ensure_session()
         assert self._session is not None
 
-        last_err: Optional[Exception] = None
         attempts = self.cfg.max_retries + 1
-
         for attempt in range(attempts):
-            t0 = time.time()
             try:
                 async with self._maybe_semaphore():
                     async with self._session.get(
@@ -105,41 +123,30 @@ class RedfishClient:
                         auth=auth,
                         ssl=self._ssl_context if not self.cfg.verify_ssl else None,
                     ) as resp:
-                            # 2xx happy path
                         if 200 <= resp.status < 300:
                             text = await resp.text()
-                                # Some devices return application/json but with oddities; parse robustly.
                             try:
                                 return json.loads(text)
                             except json.JSONDecodeError:
-                                    # Some PDUs return bytes or malformed JSON occasionally; try resp.json() as a fallback.
                                 return await resp.json(content_type=None)
 
-                        # 401/403 likely bad credentials or auth flow
                         if resp.status in (401, 403):
                             raise RedfishError(f"Auth failed ({resp.status}) for {url}")
-                        # 404: outlet not found (can occur for absent outlets)
                         if resp.status == 404:
                             return None
 
-                            # Other HTTP errors → retry-able
                         body = await _safe_snippet(resp)
                         raise RedfishError(f"HTTP {resp.status} from {url}: {body}")
 
-            except (aiohttp.ClientError, asyncio.TimeoutError, RedfishError) as e:
-                last_err = e
-                # Only backoff if we have remaining attempts
+            except (aiohttp.ClientError, asyncio.TimeoutError, RedfishError):
                 if attempt < attempts - 1:
                     await asyncio.sleep(self._backoff_delay(attempt))
                 continue
-            finally:
-                _ = time.time() - t0
 
-        # Exhausted retries
         return None
 
     def _backoff_delay(self, attempt: int) -> float:
-        base = self.cfg.backoff_base_s * (2**attempt)
+        base = self.cfg.backoff_base_s * (2 ** attempt)
         jitter = random.uniform(0, base * 0.5)
         return base + jitter
 
@@ -161,53 +168,34 @@ class _SemaphoreContext:
         if self._sem is not None:
             self._sem.release()
 
-def _extract_liquid_leak(data: dict[str, Any]) -> Optional[str]:
+def _extract_liquid_leak(data: dict[str, Any]) -> Dict[str, Optional[str]]:
     """
-    Robustly extract a watts reading from common Redfish schemas.
-
-    Primary (as requested):
-        data["PowerWatts"]["Reading"]
-
-    Fallbacks seen in the wild (kept conservative):
-        data["PowerReading"] or data["PowerReading"]["Reading"]
-        data["Power"]["Reading"]
+    Pulls health + location for the LiquidLeak sensor from common Supermicro schemas.
     """
+    health = None
+    location = None
     try:
-        word = ""
-        pw = data.get("Status")
-        if isinstance(pw, dict):
-            val = pw.get("Health")
-            if _is_string(val):
-                word += str(val) + " | "
-        sensorVal = data.get("Oem")
-        if isinstance(sensorVal, dict):
-            manfac = sensorVal.get("Supermicro")
-            if isinstance(manfac, dict):
-                location = manfac.get("SensorValue")
-                if _is_string(location):
-                    word += "Location: " + str(location)
-        return str(word)
+        status = data.get("Status")
+        if isinstance(status, dict):
+            maybe = status.get("Health")
+            if isinstance(maybe, str):
+                health = maybe
+
+        oem = data.get("Oem")
+        if isinstance(oem, dict):
+            sm = oem.get("Supermicro")
+            if isinstance(sm, dict):
+                sv = sm.get("SensorValue")
+                if isinstance(sv, str):
+                    location = sv
     except Exception:
         pass
-    return None
 
-def _is_string(x: Any) -> bool:
-    try:
-        str(x)
-        return True
-    except Exception:
-        return False
-
-def _is_number(x: Any) -> bool:
-    try:
-        float(x)
-        return True
-    except Exception:
-        return False
+    return {"health": health, "location": location}
 
 async def _safe_snippet(resp: aiohttp.ClientResponse, limit: int = 200) -> str:
-    try: 
+    try:
         text = await resp.text()
-        return text[:limit].replace("\n"," ")
+        return text[:limit].replace("\n", " ")
     except Exception:
         return "<no body>"
