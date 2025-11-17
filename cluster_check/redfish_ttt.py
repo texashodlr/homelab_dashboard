@@ -85,6 +85,25 @@ class RedfishClient:
         return _extract_liquid_leak(data)
     
     # --- Placeholders for future expansion ---
+    async def get_m2_health(self, ip: str, *, username: str, password: str) -> Optional[Dict[str, Any]]:
+        auth = aiohttp.BasicAuth(username, password)
+        base = f"https://{ip}/redfish/v1/Chassis/HA-RAID.0.StorageEnclosure.0/Drives"
+        url_0 = f"{base}/Disk.Bay.0"
+        url_1 = f"{base}/Disk.Bay.1"
+        data_0, data_1 = await asyncio.gather(
+            self._get_json_with_retries(url_0,auth=auth),
+            self._get_json_with_retries(url_1,auth=auth),
+        )
+        
+        if data_0 is None and data_1 is None:
+            return None
+        
+        drives: List[Dict[str, Any]] = []
+        if data_0 is not None:
+            drives.append(_extract_m2_drive(data_0, bay="0"))
+        if data_1 is not None:
+            drives.append(_extract_m2_drive(data_1, bay="1"))
+        return drives
 
     async def get_cpu_health(self, ip: str, *, username: str, password: str) -> Optional[Dict[str, Any]]:
         # Example endpoint (varies by vendor): /redfish/v1/Systems/1/Processors
@@ -192,6 +211,49 @@ def _extract_liquid_leak(data: dict[str, Any]) -> Dict[str, Optional[str]]:
         pass
 
     return {"health": health, "location": location}
+
+def _extract_m2_drive(data: Dict[str, Any], bay: str) -> Dict[str, Any]:
+    """
+    Pulls health + location for the LiquidLeak sensor from common Supermicro schemas.
+    """
+    health: Optional[str] =  None
+    otherErrCount: Optional[int] = None
+    SmartEvent: Optional[int] = None
+    MediaErrCount: Optional[int] = None
+    
+    try:
+        status = data.get("Status")
+        if isinstance(status, dict):
+            maybe = status.get("Health")
+            if isinstance(maybe, str):
+                health = maybe
+
+        oem = data.get("Oem")
+        if isinstance(oem, dict):
+            sm = oem.get("Supermicro")
+            if isinstance(sm, dict):
+                oec = sm.get("OtherErrCount")
+                if isinstance(oec, int):
+                    other_err_count = oec
+
+                ser = sm.get("SmartEventReceived")
+                if isinstance(ser, int):
+                    smart_event = ser
+
+                mec = sm.get("MediaErrCount")
+                if isinstance(mec, int):
+                    media_err_count = mec
+    except Exception:
+        # swallow and return partial info
+        pass
+
+    return {
+        "bay": bay,
+        "health": health,
+        "other_err_count": other_err_count,
+        "smart_event_received": smart_event,
+        "media_err_count": media_err_count,
+    }
 
 async def _safe_snippet(resp: aiohttp.ClientResponse, limit: int = 200) -> str:
     try:

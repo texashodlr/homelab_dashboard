@@ -2,6 +2,7 @@ import os
 import json
 import time
 import argparse
+from tqdm import tqdm
 import asyncio
 from typing import List, Tuple, Dict, Any
 
@@ -39,6 +40,13 @@ async def run_checks(rf: RedfishClient, ip: str, user: str, pw: str) -> Dict[str
         results["liquid_leak"] = None
         results.setdefault("_errors", []).append(f"liquid_leak:{type(e).__name__}")
     
+    try:
+        ll = await rf.get_m2_health(ip=ip, username=user, password=pw)
+        results["m2_drives"] = ll
+    except Exception as e:
+        results["m2_drives"] = None
+        results.setdefault("_errors", []).append(f"m2_drives:{type(e).__name__}")
+
     # -- Future -- #
     # 2. CPU
     # 3. HDD/SSD
@@ -88,12 +96,19 @@ async def sweep(
 
         tasks = [do_one(n, ip, u, p) for (n, ip, u, p) in servers]
 
+        start = time.time()
+
         # Append mode so multiple sweeps can be concatenated
         with open(out_path, "a", buffering=1) as fh:
-            for fut in asyncio.as_completed(tasks):
-                line = await fut
-                fh.write(line + "\n")
-
+            # tqdm progress bar over total number of servers
+            with tqdm(total=len(tasks), desc="Liquid leak sweep", unit="server") as pbar:
+                for fut in asyncio.as_completed(tasks):
+                    line = await fut
+                    fh.write(line + "\n")
+                    pbar.update(1)   # <- bump bar for each completed host
+        
+        end = time.time()
+        print(f"[Sweep Completed] Servers: {len(servers)} | Duration {end - start:.2f} seconds")
 # ---------- cli ----------
 
 def parse_args():
