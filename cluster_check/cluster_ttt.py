@@ -40,12 +40,29 @@ async def run_checks(rf: RedfishClient, ip: str, user: str, pw: str) -> Dict[str
         results["liquid_leak"] = None
         results.setdefault("_errors", []).append(f"liquid_leak:{type(e).__name__}")
     
+    # 2. M2 Health Check
     try:
         ll = await rf.get_m2_health(ip=ip, username=user, password=pw)
         results["m2_drives"] = ll
     except Exception as e:
         results["m2_drives"] = None
         results.setdefault("_errors", []).append(f"m2_drives:{type(e).__name__}")
+    
+    # 3. NVME Health Check
+    try:
+        ll = await rf.get_nvme_health(ip=ip, username=user, password=pw)
+        results["nvme_drives"] = ll
+    except Exception as e:
+        results["nvme_drives"] = None
+        results.setdefault("_errors", []).append(f"nvme_drives:{type(e).__name__}")
+    
+    # 4. Memory Health Check
+    try:
+        ll = await rf.get_memory_health(ip=ip, username=user, password=pw)
+        results["dimm_slots"] = ll
+    except Exception as e:
+        results["dimm_slots"] = None
+        results.setdefault("_errors", []).append(f"dimm_slots:{type(e).__name__}")
 
     # -- Future -- #
     # 2. CPU

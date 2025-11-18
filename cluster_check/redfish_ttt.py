@@ -104,6 +104,56 @@ class RedfishClient:
         if data_1 is not None:
             drives.append(_extract_m2_drive(data_1, bay="1"))
         return drives
+    
+    async def get_nvme_health(self, ip: str, *, username: str, password: str) -> Optional[Dict[str, Any]]:
+        auth = aiohttp.BasicAuth(username, password)
+        base = f"https://{ip}/redfish/v1/Chassis/1/PCIeDevices/NVMeSSD"
+        url_1 = f"{base}1"
+        url_2 = f"{base}2"
+        url_3 = f"{base}3"
+        url_4 = f"{base}4"
+
+        data_1, data_2, data_3, data_4 = await asyncio.gather(
+            self._get_json_with_retries(url_1,auth=auth),
+            self._get_json_with_retries(url_2,auth=auth),
+            self._get_json_with_retries(url_3,auth=auth),
+            self._get_json_with_retries(url_4,auth=auth),
+        )
+        
+        if data_1 is None and data_2 is None and data_3 is None and data_4 is None:
+            return None
+        
+        drives: List[Dict[str, Any]] = []
+        if data_1 is not None:
+            drives.append(_extract_nvme_drive(data_1, bay="1"))
+        if data_2 is not None:
+            drives.append(_extract_nvme_drive(data_2, bay="2"))
+        if data_3 is not None:
+            drives.append(_extract_nvme_drive(data_3, bay="3"))
+        if data_4 is not None:
+            drives.append(_extract_nvme_drive(data_4, bay="4"))    
+        return drives
+    
+    async def get_memory_health(self, ip: str, *, username: str, password: str) -> Optional[List[Dict[str, Any]]]:
+        
+        auth = aiohttp.BasicAuth(username, password)
+        base = f"https://{ip}/redfish/v1/Systems/1/Memory/"
+        # /redfish/v1/Systems/1/Memory/12/MemoryMetrics
+        dimm_slots = [str(i) for i in range(1, 25)]
+        urls = [f"{base}{dimm}/MemoryMetrics" for dimm in dimm_slots]
+
+        tasks = [self._get_json_with_retries(url, auth=auth) for url in urls]
+        datas = await asyncio.gather(*tasks)
+
+        if all(d is None for d in datas):
+            return None
+        
+        dimms: List[Dict[str, Any]] = []
+        for dimm, data in zip(dimm_slots, datas):
+            if data is not None:
+                dimms.append(_extract_dimm(data, dimm=dimm))
+
+        return dimms
 
     async def get_cpu_health(self, ip: str, *, username: str, password: str) -> Optional[Dict[str, Any]]:
         # Example endpoint (varies by vendor): /redfish/v1/Systems/1/Processors
@@ -116,10 +166,6 @@ class RedfishClient:
 
     async def get_nic_health(self, ip: str, *, username: str, password: str) -> Optional[Dict[str, Any]]:
         # /redfish/v1/Systems/1/EthernetInterfaces or OEM NIC sensors
-        return None
-
-    async def get_memory_health(self, ip: str, *, username: str, password: str) -> Optional[Dict[str, Any]]:
-        # /redfish/v1/Systems/1/Memory
         return None
 
     # ---------- INTERNALS ----------
@@ -248,12 +294,76 @@ def _extract_m2_drive(data: Dict[str, Any], bay: str) -> Dict[str, Any]:
         pass
 
     return {
-        "bay": bay,
+        "m2_bay": bay,
         "health": health,
         "other_err_count": other_err_count,
         "smart_event_received": smart_event,
         "media_err_count": media_err_count,
     }
+
+def _extract_nvme_drive(data: Dict[str, Any], bay: str) -> Dict[str, Any]:
+    """
+    Pulls health + location for the nvme drive from common Supermicro schemas.
+    """
+    serialNumber: Optional[str] =  None
+    health: Optional[str] = None
+    healthRollup: Optional[str] = None
+    
+    try:
+        serialNumber = data.get("SerialNumber")
+
+        status = data.get("Status")
+        if isinstance(status, dict):
+            h = status.get("Health")
+            if isinstance(h, str):
+                health = h
+            hr = status.get("HealthRollup")
+            if isinstance(hr, str):
+                healthRollup = hr
+    except Exception:
+        # swallow and return partial info
+        pass
+
+    return {
+        "nvme_bay": bay,
+        "sn": serialNumber,
+        "health": health,
+        "healthRollup": healthRollup,
+    }
+
+def _extract_dimm(data: Dict[str, Any], dimm: str) -> Dict[str, Any]:
+    """
+    Pulls health + location for the nvme drive from common Supermicro schemas.
+    """
+    temp_alarm: Optional[bool] =  None
+    uncorrectableECCerr_alarm: Optional[bool] = None
+    correctableECCerr_alarm: Optional[bool] = None
+    
+    try:
+        health_data = data.get("HealthData")
+        if isinstance(health_data, dict):
+            alarm_trips = health_data.get("AlarmTrips")
+            if isinstance(alarm_trips, dict):
+                t = alarm_trips.get("Temperature")
+                if isinstance(t, bool):
+                    temp_alarm = t
+                unc = alarm_trips.get("UncorrectableECCError")
+                if isinstance(unc, bool):
+                    uncorrectableECCerr_alarm = unc
+                c = alarm_trips.get("CorrectableECCError")
+                if isinstance(c, bool):
+                    correctableECCerr_alarm = c
+    except Exception:
+        # swallow and return partial info
+        pass
+
+    return {
+        "dimm_slot": dimm,
+        "temp_alarm": temp_alarm,
+        "uncorrectableECCerr_alarm": uncorrectableECCerr_alarm,
+        "correctableECCerr_alarm": correctableECCerr_alarm,
+    }
+
 
 async def _safe_snippet(resp: aiohttp.ClientResponse, limit: int = 200) -> str:
     try:
